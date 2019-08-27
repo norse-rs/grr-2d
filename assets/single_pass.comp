@@ -27,6 +27,7 @@ layout (binding = 2, std430) readonly buffer SceneCircle {
 };
 
 shared uint tile_cache[32];
+shared vec4 cache_bbox[32];
 
 void main() {
     const uint lane_id = gl_LocalInvocationID.x + gl_LocalInvocationID.y * gl_WorkGroupSize.x;
@@ -36,7 +37,7 @@ void main() {
     const vec2 fragment_pos = vec2(gl_GlobalInvocationID.x * fragment_dim.x, gl_GlobalInvocationID.y * fragment_dim.y);
     const vec2 fragment_center = fragment_pos + 0.5 * fragment_dim;
 
-    vec4 color = vec4(0.2, 0.0, 0.0, 0.0);
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
     for (uint e = 0; e < u_num_entities; e += 32) {
         // coarse culling based on bounding box
         // tile level
@@ -44,6 +45,7 @@ void main() {
         bool hit = false;
         if (ti < u_num_entities) {
             const vec4 bbox = bboxes[ti];
+            cache_bbox[lane_id] = bbox;
             hit = all(bvec4(lessThan(bbox.xy, tile_pos + tile_dim), greaterThan(bbox.zw, tile_pos)));
         }
         const uvec4 hitBallot = subgroupBallot(hit);
@@ -53,17 +55,19 @@ void main() {
         }
 
         const uint tile_cache_size = subgroupBallotBitCount(hitBallot);
+
         for (uint i = 0; i < tile_cache_size; i++) {
-            uint entity_id = tile_cache[i];
-            uint entity_ty = entities[entity_id].type;
+            const uint entity_id = tile_cache[i];
+            const uint entity_ty = circles[entity_id].type;
             switch (entity_ty) {
             case 0x1: {
-                vec4 bbox = bboxes[entity_id];
+                vec4 bbox = cache_bbox[entity_id % 32];
                 vec2 position = (bbox.xy + bbox.zw) / 2.0;
                 float radius = position.x - bbox.x;
 
-                float dist = length(fragment_center - position);
-                float alpha = clamp(radius - dist, 0.0, 1.0);
+                vec2 dir = fragment_center - position;
+                float dist = dot(dir, dir);
+                float alpha = clamp(radius * radius - dist, 0.0, 1.0);
                 vec4 circle_color = unpackUnorm4x8(circles[entity_id].color);
                 color += circle_color * circle_color.a * alpha;
             } break;

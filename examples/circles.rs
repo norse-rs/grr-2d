@@ -2,11 +2,11 @@ use std::error::Error;
 use glutin::dpi::LogicalSize;
 use rand::prelude::*;
 
-const SINGLE_PASS: bool = false;
+const SINGLE_PASS: bool = true;
 
 const MAX_NUM_TILES_X: u64 = 64;
 const MAX_NUM_TILES_Y: u64 = 128;
-const MAX_TILE_SIZE: u64 = 128;
+const MAX_TILE_SIZE: u64 = 8192;
 
 #[repr(C)]
 struct CmdCircle {
@@ -15,7 +15,7 @@ struct CmdCircle {
 }
 
 fn main() -> Result<(), Box<Error>> {
-    let TILE_SIZE_X = if SINGLE_PASS { 8 } else { 32 };
+    let TILE_SIZE_X = if SINGLE_PASS { 8} else { 32 };
     let TILE_SIZE_Y = if SINGLE_PASS { 4 } else { 8 };
 
     unsafe {
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<Error>> {
         let mut bboxes: Vec<[f32; 4]> = Vec::new();
         let mut circles: Vec<CmdCircle> = Vec::new();
         let mut rng = rand::thread_rng();
-        for n in 0..8 {
+        for n in 0..1000 {
             let diameter: u16 = rng.gen_range(20, 200);
             let bbox_min_x: u16 = rng.gen_range(0, 770.0 as u16);
             let bbox_min_y: u16 = rng.gen_range(0, 350.0 as u16);
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<Error>> {
         //         ty: 0x1,
         //         color: 0x404AB020,
         //     },
-        // ].iter().cycle
+        // ];
 
         let scene_bboxes = grr.create_buffer_from_host(grr::as_u8_slice(&bboxes), grr::MemoryFlags::DEVICE_LOCAL)?;
         let scene_buffer = grr.create_buffer_from_host(grr::as_u8_slice(&circles), grr::MemoryFlags::DEVICE_LOCAL)?;
@@ -177,7 +177,7 @@ fn main() -> Result<(), Box<Error>> {
             let num_tiles_x = (w as u32 + TILE_SIZE_X - 1) / TILE_SIZE_X;
             let num_tiles_y = (h as u32 + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
 
-            let num_tile_groups_x = (num_tiles_x + 0) / 1;
+            let num_tile_groups_x = (num_tiles_x + 31) / 32;
 
             if !SINGLE_PASS {
                 grr.bind_pipeline(pipeline_tiler);
@@ -217,6 +217,8 @@ fn main() -> Result<(), Box<Error>> {
 
                 grr.bind_storage_image_views(0, &[color_target_view]);
                 grr.dispatch(num_tile_groups_x, num_tiles_y, 1);
+
+                grr.memory_barrier(grr::Barrier::STORAGE_BUFFER_RW);
 
                 grr.bind_pipeline(pipeline_rasterizer);
 

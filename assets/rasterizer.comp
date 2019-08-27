@@ -16,10 +16,9 @@ layout (binding = 0, std430) buffer TileCommand {
 };
 
 void main() {
-    const uint tileID = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x
-     + gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_WorkGroupID.z;
+    const uint tileID = gl_WorkGroupID.x + gl_WorkGroupID.y * 64;
 
-    const uint max_ops = 128 / 16;
+    const uint max_ops = 8192 / 16;
     uint dst = max_ops * tileID;
 
     vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
@@ -44,7 +43,7 @@ void main() {
 
             float dist = length(fragment_center - position);
             float alpha = clamp(radius - dist, 0.0, 1.0);
-            color += circle_color * circle_color.a * alpha;
+            color += vec4(0.01, 0.0, 0.0, 0.0); // circle_color * circle_color.a * alpha;
         } break;
         }
     }
