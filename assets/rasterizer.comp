@@ -43,7 +43,7 @@ void main() {
 
             float dist = length(fragment_center - position);
             float alpha = clamp(radius - dist, 0.0, 1.0);
-            color += vec4(0.01, 0.0, 0.0, 0.0); // circle_color * circle_color.a * alpha;
+            color += circle_color * circle_color.a * alpha;
         } break;
         }
     }

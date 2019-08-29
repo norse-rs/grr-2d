@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<Error>> {
     unsafe {
         let mut events_loop = glutin::EventsLoop::new();
         let wb = glutin::WindowBuilder::new()
-            .with_title("grr - Triangle")
+            .with_title("grr - Circles")
             .with_dimensions(LogicalSize {
                 width: 1440.0,
                 height: 700.0,
