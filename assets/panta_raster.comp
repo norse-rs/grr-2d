@@ -1,0 +1,60 @@
+#version 450 core
+
+//  Copyright 2019 The xi-editor authors.
+
+layout (local_size_x = 32, local_size_y = 8) in;
+
+// > Resources
+layout (binding = 5, rgba32f) uniform image2D u_color_target;
+
+layout (location = 0) uniform uint u_num_primitives;
+layout (location = 1) uniform vec4 u_viewport;
+
+layout (binding = 0, std430) readonly buffer SceneVertices {
+    vec2 vertices[];
+};
+
+layout (binding = 1, std430) readonly buffer ScenePrimitives {
+    uint primitives[];
+};
+
+// > Constants
+const float FLOAT_MAX = 3.402823466e+38;
+const uint PRIMITIVE_LINE_FIELD = 0x1; // distance field generation
+const uint PRIMITIVE_LINE_SHADE = 0x2; // distance field line stroke shading
+
+void main() {
+    const vec2 num_tiles = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    const vec2 tile_extent = u_viewport.zw / num_tiles;
+    const vec2 tile_offset = u_viewport.xy + tile_extent * gl_GlobalInvocationID.xy;
+    const vec2 tile_center = tile_offset + 0.5 * tile_extent;
+
+    vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+    float stroke_df = FLOAT_MAX;
+
+    uint base_vertex = 0;
+    for (uint i = 0; i < u_num_primitives; i++) {
+        const uint primitive = primitives[i];
+        switch (primitive) {
+        case PRIMITIVE_LINE_FIELD: {
+            // line distance field
+            const vec2 p0 = vertices[base_vertex++];
+            const vec2 p1 = vertices[base_vertex++];
+            const vec2 line = p1 - p0;
+            const vec2 dp = tile_center - p0;
+            const float t = clamp(dot(line, dp) / dot(line, line), 0.0, 1.0);
+            const float field = length(line * t - dp);
+            stroke_df = min(stroke_df, field);
+        } break;
+        case PRIMITIVE_LINE_SHADE: {
+            // line stroke shading
+            const float alpha = clamp(0.5 - stroke_df, 0.0, tile_extent.x) / tile_extent.x;
+            color.rgb += mix(color.rgb, vec3(1.0, 0.0, 0.0), alpha);
+            color.a += alpha;
+            stroke_df = FLOAT_MAX;
+        } break;
+        }
+    }
+
+    imageStore(u_color_target, ivec2(gl_GlobalInvocationID.xy), color);
+}

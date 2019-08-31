@@ -12,3 +12,4 @@ grr = { path = "../../repository/grr" } # "0.7"
 [dev-dependencies]
 glutin = "0.21"
 rand = "0.7"
+ttf-parser = "0.2"
