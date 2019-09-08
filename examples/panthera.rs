@@ -5,27 +5,74 @@ use std::fmt::Write;
 
 const ROBOTO: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
 
-struct GlyphBuilder(String);
+#[repr(u32)]
+enum Primitive {
+    LineField = 0x1,
+    StrokeShade = 0x2,
+    QuadraticField = 0x3,
+}
+
+struct GlyphBuilder {
+    vertices: Vec<f32>,
+    primitives: Vec<Primitive>,
+    last: [f32; 2],
+}
+
+impl GlyphBuilder {
+    fn new() -> Self {
+        GlyphBuilder {
+            vertices: Vec::new(),
+            primitives: Vec::new(),
+            last: [0.0; 2],
+        }
+    }
+}
 
 impl ttf_parser::OutlineBuilder for GlyphBuilder {
     fn move_to(&mut self, x: f32, y: f32) {
-        write!(&mut self.0, "M {} {} ", x, y).unwrap();
+        self.last = [x, y];
     }
 
     fn line_to(&mut self, x: f32, y: f32) {
-        write!(&mut self.0, "L {} {} ", x, y).unwrap();
+        // b0
+        self.vertices.push(self.last[0]);
+        self.vertices.push(self.last[1]);
+
+        // b1
+        self.vertices.push(x);
+        self.vertices.push(y);
+
+        self.primitives.push(Primitive::LineField);
+
+        self.last = [x, y];
     }
 
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
-        write!(&mut self.0, "Q {} {} {} {} ", x1, y1, x, y).unwrap();
+        // b0
+        self.vertices.push(self.last[0]);
+        self.vertices.push(self.last[1]);
+
+        // b1
+        self.vertices.push(x1);
+        self.vertices.push(y1);
+
+        // b2
+        self.vertices.push(x);
+        self.vertices.push(y);
+
+        self.primitives.push(Primitive::QuadraticField);
+
+        self.last = [x, y];
     }
 
     fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
-        write!(&mut self.0, "C {} {} {} {} {} {} ", x1, y1, x2, y2, x, y).unwrap();
+        unimplemented!()
     }
 
     fn close(&mut self) {
-        write!(&mut self.0, "Z ").unwrap();
+        // TODO: currently just stroke
+        println!("close");
+        self.primitives.push(Primitive::StrokeShade);
     }
 }
 
@@ -65,9 +112,9 @@ fn main() -> Result<(), Box<Error>> {
                 height: 700.0,
             });
         let window = glutin::ContextBuilder::new()
-            .with_vsync(false)
+            .with_vsync(true)
             .with_srgb(true)
-            .with_gl_debug_flag(false)
+            .with_gl_debug_flag(true)
             .build_windowed(wb, &events_loop)?
             .make_current()
             .unwrap();
@@ -88,10 +135,10 @@ fn main() -> Result<(), Box<Error>> {
         );
 
         let font = ttf_parser::Font::from_data(&ROBOTO, 0)?;
-        let glyph_a_id = font.glyph_index('b')?;
-        let mut glyph_a = GlyphBuilder(String::new());
+        let glyph_a_id = font.glyph_index('φ')?;
+        let mut glyph_a = GlyphBuilder::new();
         let glyph_a_bbox = font.outline_glyph(glyph_a_id, &mut glyph_a).unwrap();
-        println!("{:?} | {:?}", glyph_a_bbox, glyph_a.0);
+        println!("{:?}", glyph_a_bbox);
         println!("{:?}", font.units_per_em());
 
         let shader_coarse_culling = grr.create_shader(
@@ -144,16 +191,31 @@ fn main() -> Result<(), Box<Error>> {
         let num_tiles_x = (w as u32 + TILE_SIZE_X - 1) / TILE_SIZE_X;
         let num_tiles_y = (h as u32 + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
 
-        let vertices = [
-            40.0f32, 20.0f32, 80.0f32, 60.0f32,
-            80.0f32, 60.0f32, 150.0, 10.0
-        ];
-        let primitives = [1u32, 1, 2];
-        let scene_vertices = grr.create_buffer_from_host(grr::as_u8_slice(&vertices), grr::MemoryFlags::DEVICE_LOCAL)?;
-        let scene_primitives = grr.create_buffer_from_host(grr::as_u8_slice(&primitives), grr::MemoryFlags::DEVICE_LOCAL)?;
+        // let vertices = [
+        //     40.0f32, 20.0f32,
+        //     80.0f32, 60.0f32,
+        //     150.0, 10.0
+        // ];
+        // let primitives = [3u32, 2];
+
+        // let vertices = [
+        //     -2.5f32, 6.25,
+        //     0.0, -6.25,
+        //     2.5, 6.25,
+        // ];
+        // let primitives = [3u32];
+
+        // let vertices = [
+        //     40.0f32, 20.0f32, 80.0f32, 60.0f32,
+        //     80.0f32, 60.0f32, 150.0, 10.0
+        // ];
+        // let primitives = [1u32, 1, 2];
+
+        let scene_vertices = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_a.vertices), grr::MemoryFlags::DEVICE_LOCAL)?;
+        let scene_primitives = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_a.primitives), grr::MemoryFlags::DEVICE_LOCAL)?;
 
         let mut viewport = Viewport {
-            position: (50.0, 50.0),
+            position: (100.0, 40.0),
             scaling_y: 100.0,
             aspect_ratio: (w / h) as _,
         };
@@ -211,7 +273,7 @@ fn main() -> Result<(), Box<Error>> {
                 pipeline_raster,
                 0,
                 &[
-                    grr::Constant::U32(primitives.len() as _), // primitives
+                    grr::Constant::U32(glyph_a.primitives.len() as _), // primitives
                     grr::Constant::Vec4(viewport.get_rect()), // primitives
                 ],
             );
@@ -219,12 +281,12 @@ fn main() -> Result<(), Box<Error>> {
                 grr::BufferRange {
                     buffer: scene_vertices,
                     offset: 0,
-                    size: (std::mem::size_of::<f32>() * vertices.len()) as _,
+                    size: (std::mem::size_of::<f32>() * glyph_a.vertices.len()) as _,
                 },
                 grr::BufferRange {
                     buffer: scene_primitives,
                     offset: 0,
-                    size: (std::mem::size_of::<u32>() * primitives.len()) as _,
+                    size: (std::mem::size_of::<u32>() * glyph_a.primitives.len()) as _,
                 },
             ]);
             grr.bind_storage_image_views(5, &[color_target_view]);
