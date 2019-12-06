@@ -1,46 +1,27 @@
 #version 450 core
 
-//  Copyright 2019 The xi-editor authors.
+const float FLOAT_MAX = 3.402823466e+38;
 
-layout (local_size_x = 32, local_size_y = 8) in;
+const uint PRIMITIVE_LINE = 0x1; // distance field generation (linear curve)
+const uint PRIMITIVE_STROKE = 0x2; // distance field stroke shading
+const uint PRIMITIVE_QUADRATIC = 0x3; // quadratic curve
+const uint PRIMITIVE_FILL = 0x4; // fill shading
 
-// > Resources
-layout (binding = 5, rgba32f) uniform image2D u_color_target;
 
 layout (location = 0) uniform uint u_num_primitives;
 layout (location = 1) uniform vec4 u_viewport;
+layout (location = 2) uniform vec2 u_screen_dim;
+
+layout (location = 0) in vec2 f_pos_curve;
 
 layout (binding = 0, std430) readonly buffer SceneVertices {
     vec2 vertices[];
 };
-
 layout (binding = 1, std430) readonly buffer ScenePrimitives {
     uint primitives[];
 };
 
-// > Constants
-const float FLOAT_MAX = 3.402823466e+38;
-const uint PRIMITIVE_LINE_FIELD = 0x1; // distance field generation (linear curve)
-const uint PRIMITIVE_STROKE_SHADE = 0x2; // distance field stroke shading
-const uint PRIIMTIVE_QUADRATIC_FIELD = 0x3; // distance field generation (quadratic curve)
-
-// following real-time collision detection
-vec3 barycentrics(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
-    const vec2 v0 = p1 - p0;
-    const vec2 v1 = p2 - p0;
-    const vec2 v2 = p - p0;
-
-    const float d00 = dot(v0, v0);
-    const float d01 = dot(v0, v1);
-    const float d11 = dot(v1, v1);
-    const float d20 = dot(v2, v0);
-    const float d21 = dot(v2, v1);
-    const float denom = d00 * d11 - d01 * d01;
-    const float v = (d11 * d20 - d01 * d21) / denom;
-    const float w = (d00 * d21 - d01 * d20) / denom;
-    const float u = 1.0 - v - w;
-    return vec3(u, v, w);
-}
+out vec4 o_frag;
 
 float acos_approx(float x)
 {
@@ -87,15 +68,6 @@ vec2 solve_cubic(vec4 coeffs)
     }
 }
 
-vec2 quad_eval(vec2 A, vec2 B, vec2 C, float t)
-{
-    const vec3 factor = vec3(1-t*t, 2*t*(1-t), t*t);
-    return vec2(
-        dot(vec3(A.x, B.x, C.x), factor),
-        dot(vec3(A.y, B.y, C.y), factor)
-    );
-}
-
 float df_quadratic_bezier(vec2 b0, vec2 b1, vec2 b2, vec2 p)
 {
     const vec2 a = b1 - b0;
@@ -111,14 +83,15 @@ float df_quadratic_bezier(vec2 b0, vec2 b1, vec2 b2, vec2 p)
     return min(dot(d0, d0), dot(d1, d1));
 }
 
+
 void main() {
-    const vec2 num_tiles = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
-    const vec2 tile_extent = u_viewport.zw / num_tiles;
-    const vec2 tile_offset = u_viewport.xy + tile_extent * gl_GlobalInvocationID.xy;
-    const vec2 tile_center = tile_offset + 0.5 * tile_extent;
+    const vec2 tile_extent = 1.0 / u_screen_dim;
+    const vec2 tile_offset = u_viewport.xy + tile_extent * gl_FragCoord.xy;
+    const vec2 tile_center = f_pos_curve;
 
     vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
     float stroke_df = FLOAT_MAX;
+    float winding = 0.0;
 
     const float unit = 1.0 / sqrt(dot(tile_extent, tile_extent));
 
@@ -126,25 +99,40 @@ void main() {
     for (uint i = 0; i < u_num_primitives; i++) {
         const uint primitive = primitives[i];
         switch (primitive) {
-        case PRIMITIVE_LINE_FIELD: {
+        case PRIMITIVE_LINE: {
             // line distance field
             const vec2 p0 = vertices[base_vertex++];
             const vec2 p1 = vertices[base_vertex++];
+
+            // intersection check
+            const bool y0 = p0.y > tile_center.y;
+            const bool y1 = p1.y > tile_center.y;
+
+            if (y0 && !y1) {
+                winding -= 1.0;
+            } else if (!y0 && y1) {
+                winding += 1.0;
+            }
+
+            // distance field
             const vec2 line = p1 - p0;
             const vec2 dp = tile_center - p0;
             const float t = clamp(dot(line, dp) / dot(line, line), 0.0, 1.0);
-            const vec2 n = line * t - dp;
-            const float field = dot(n, n);
+            const float field = length(line * t - dp);
             stroke_df = min(stroke_df, field);
         } break;
-        case PRIMITIVE_STROKE_SHADE: {
+        case PRIMITIVE_STROKE: {
             // stroke shading
-            const float alpha = clamp(0.5 + 0.5 * (10.0 - stroke_df) * unit, 0.0, 1.0) ;
-            color.rgb += mix(color.rgb, vec3(1.0, 0.0, 0.0), alpha);
-            color.a += alpha;
-            stroke_df = FLOAT_MAX;
+            const float alpha = clamp(0.5 * stroke_df * unit, 0.0, 1.0);
+            // color.rgb += mix(color.rgb, vec3(1.0, 0.0, 0.0), alpha);
+            // color.a += alpha;
+
+            color.rgb = vec3(0.5 + 0.5 * winding);
+            color.a = 1.0;
+
+            // stroke_df = FLOAT_MAX;
         } break;
-        case PRIIMTIVE_QUADRATIC_FIELD: {
+        case PRIMITIVE_QUADRATIC: {
             // quadratic curve distance field
             const vec2 p0 = vertices[base_vertex++];
             const vec2 p1 = vertices[base_vertex++];
@@ -157,5 +145,5 @@ void main() {
         }
     }
 
-    imageStore(u_color_target, ivec2(gl_GlobalInvocationID.xy), color);
+    o_frag = color;
 }
