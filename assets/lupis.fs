@@ -6,7 +6,9 @@ const uint PRIMITIVE_LINE = 0x1; // distance field generation (linear curve)
 const uint PRIMITIVE_STROKE = 0x2; // distance field stroke shading
 const uint PRIMITIVE_QUADRATIC = 0x3; // quadratic curve
 const uint PRIMITIVE_FILL = 0x4; // fill shading
+const uint PRIMTIIVE_QUADRATIC_MONO = 0x5; // monotonic quadratic curve
 
+const uint QUADRATIC_LUT = 0x535ACA0;
 
 layout (location = 0) uniform uint u_num_primitives;
 layout (location = 1) uniform vec4 u_viewport;
@@ -23,77 +25,28 @@ layout (binding = 1, std430) readonly buffer ScenePrimitives {
 
 out vec4 o_frag;
 
-float acos_approx(float x)
-{
-    // Eberly
-    const float c0 = 1.570796;
-    const float c1 = -0.203471;
-    const float c2 = 0.0468878;
-    const float pi = 3.1415926;
-
-    float abs_x = abs(x);
-    float res = (c2 * abs_x + c1) * abs_x + c0;
-    res *= sqrt(1.0 -abs_x);
-
-    return (abs_x >= 0) ? res : pi - res;
+float min4(vec4 v) {
+    return min(min(v.x, v.y), min(v.z, v.w));
 }
 
-vec2 solve_cubic(vec4 coeffs)
-{
-    float b = coeffs.y / coeffs.x;
-    float c = coeffs.z / coeffs.x;
-    float d = coeffs.w / coeffs.x;
-
-    const float p = c - b * b / 3.0;
-    const float q = b * (2.0 * b * b - 9.0 * c) / 27.0 + d;
-
-    const float unpress = -b / 3.0;
-    const float p3 = p * p * p;
-    const float det = q * q + 4.0 * p3 / 27.0;
-
-    if (det > 0.0) {
-        const float drt = sqrt(det);
-        const vec2 x = 0.5 * (vec2(drt, -drt) - q);
-        const vec2 roots = sign(x) * pow(abs(x), vec2(1.0 / 3.0));
-        return vec2(roots.x + roots.y + unpress);
-    } else {
-        const float theta = acos_approx(-sqrt(-27.0 /4.0 * q * q / p3)) / 3.0;
-        const vec2 roots = vec2(cos(theta), sin(theta));
-
-        const float x = roots.x * sqrt(-p/3.0);
-	    return vec2(
-            2.0 * x + unpress,
-            - (x + roots.y * sqrt(-p)) + unpress
-        );
-    }
+float max4(vec4 v) {
+    return max(max(v.x, v.y), max(v.z, v.w));
 }
 
-float df_quadratic_bezier(vec2 b0, vec2 b1, vec2 b2, vec2 p)
+float filtering(float x, float lower, float upper)
 {
-    const vec2 a = b1 - b0;
-    const vec2 b = b2 - b1 - a;
-    const vec2 c = p - b0;
-
-    const vec4 coeffs = vec4(-dot(b, b), -3.0 * dot(a, b), dot(b, c) - 2.0 * dot(a, a), dot(a, c));
-    const vec2 t = clamp(solve_cubic(coeffs), 0.0, 1.0);
-
-    const vec2 d0 = (2.0 * a + b * t.x) * t.x - c;
-    const vec2 d1 = (2.0 * a + b * t.y) * t.y - c;
-
-    return min(dot(d0, d0), dot(d1, d1));
+    return smoothstep(-1.0, 1.0, x);
+    // return clamp(x, 0.0, 1.0);
 }
-
 
 void main() {
-    const vec2 tile_extent = 1.0 / u_screen_dim;
-    const vec2 tile_offset = u_viewport.xy + tile_extent * gl_FragCoord.xy;
     const vec2 tile_center = f_pos_curve;
+    const vec2 tile_extent = fwidth(tile_center);
+    const float unit = 1.0 / tile_extent.y;
 
     vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
     float stroke_df = FLOAT_MAX;
-    float winding = 0.0;
-
-    const float unit = 1.0 / sqrt(dot(tile_extent, tile_extent));
+    vec2 winding = vec2(0.0);
 
     uint base_vertex = 0;
     for (uint i = 0; i < u_num_primitives; i++) {
@@ -101,46 +54,95 @@ void main() {
         switch (primitive) {
         case PRIMITIVE_LINE: {
             // line distance field
-            const vec2 p0 = vertices[base_vertex++];
-            const vec2 p1 = vertices[base_vertex++];
+            const vec2 p0 = vertices[base_vertex++] - tile_center;
+            const vec2 p1 = vertices[base_vertex++] - tile_center;
 
             // intersection check
-            const bool y0 = p0.y > tile_center.y;
-            const bool y1 = p1.y > tile_center.y;
+            const bvec4 bounds = greaterThan(vec4(p0.x, p1.x, p0.y, p1.y), vec4(0.0));
+            const float kx = mix(p0.x, p1.x, (0.0 - p0.y) / (p1.y - p0.y));
+            const float ky = mix(p0.y, p1.y, (0.0 - p0.x) / (p1.x - p0.x));
 
-            if (y0 && !y1) {
-                winding -= 1.0;
-            } else if (!y0 && y1) {
-                winding += 1.0;
+            {
+                if (bounds.z && !bounds.w) { // moving down
+                    winding.x += filtering(kx * unit, 0.0, 1.0);
+                } else if (!bounds.z && bounds.w) { // moving up
+                    winding.x -= filtering(kx * unit, 0.0, 1.0);
+                }
+            }
+            {
+                if (bounds.x && !bounds.y) {
+                    winding.y -= filtering(ky * unit, 0.0, 1.0);
+                } else if (!bounds.x && bounds.y) {
+                    winding.y += filtering(ky * unit, 0.0, 1.0);
+                }
             }
 
-            // distance field
-            const vec2 line = p1 - p0;
-            const vec2 dp = tile_center - p0;
-            const float t = clamp(dot(line, dp) / dot(line, line), 0.0, 1.0);
-            const float field = length(line * t - dp);
-            stroke_df = min(stroke_df, field);
+            // winding += local_winding * 0.5;
+            // stroke_df = min(stroke_df, field);
         } break;
         case PRIMITIVE_STROKE: {
             // stroke shading
-            const float alpha = clamp(0.5 * stroke_df * unit, 0.0, 1.0);
-            // color.rgb += mix(color.rgb, vec3(1.0, 0.0, 0.0), alpha);
-            // color.a += alpha;
-
-            color.rgb = vec3(0.5 + 0.5 * winding);
-            color.a = 1.0;
+            float alpha = min(winding.x, winding.y);
+            color.rgb = sqrt(vec3(1.0 - alpha));
+            color.a = alpha;
 
             // stroke_df = FLOAT_MAX;
+            winding = vec2(0.0);
         } break;
-        case PRIMITIVE_QUADRATIC: {
-            // quadratic curve distance field
-            const vec2 p0 = vertices[base_vertex++];
-            const vec2 p1 = vertices[base_vertex++];
-            const vec2 p2 = vertices[base_vertex++];
 
-            // -- Analytic
-            float distsq = df_quadratic_bezier(p0, p1, p2, tile_center);
-            stroke_df = min(stroke_df, sqrt(distsq));
+        case PRIMTIIVE_QUADRATIC_MONO: {
+            const vec2 p0 = vertices[base_vertex++] - tile_center;
+            const vec2 p1 = vertices[base_vertex++] - tile_center;
+            const vec2 p2 = vertices[base_vertex++] - tile_center;
+
+            // intersection check
+            const bvec4 bounds = greaterThan(vec4(p0.x, p2.x, p0.y, p2.y), vec4(0.0));
+
+            {
+                const vec2 a = p0 - 2 * p1 + p2;
+                const vec2 b = p0 - p1;
+                const vec2 c = p0;
+
+                const vec2 dscr = sqrt(max(b * b - a * c, 0.0));
+                const vec2 t0 = (b - dscr) / a;
+                const vec2 t1 = (b + dscr) / a;
+
+                const vec2 ty = vec2(t0.x, t1.x);
+                const vec2 tx = vec2(t0.y, t1.y);
+                const vec2 x = (1 - tx) * (1 - tx) * p0.x + 2.0 * (1 - tx) * tx * p1.x + tx * tx * p2.x;
+                const vec2 y = (1 - ty) * (1 - ty) * p0.y + 2.0 * (1 - ty) * ty * p1.y + ty * ty * p2.y;
+
+                // const vec2 dxy = 2 * (-p0 * (1 - tx.y) - 2.0 * p1 * tx.y  + p1 +  tx.y * p2);
+                // const vec2 dxx = 2 * (-p0 * (1 - tx.x) - 2.0 * p1 * tx.x  + p1 +  tx.x * p2);
+                // const vec2 dyy = 2 * (-p0 * (1 - ty.y) - 2.0 * p1 * ty.y  + p1 +  ty.y * p2);
+                // const vec2 dyx = 2 * (-p0 * (1 - ty.x) - 2.0 * p1 * ty.x  + p1 +  ty.x * p2);
+
+                // float m = 1.0;
+
+                if (bounds.z && !bounds.w) { // moving down
+                    // if (abs(dxx.x) > 0.001) {
+                    //     m = abs(dxx.y) / abs(dxx.x);
+                    // }
+                    winding.x += filtering(x.x * unit, 0.0, 1.0);
+                } else if (!bounds.z && bounds.w) { // moving up
+                    // if (abs(dxy.x) > 0.001) {
+                    //     m = abs(dxy.y) / abs(dxy.x);
+                    // }
+                    winding.x -= filtering(x.y * unit, 0.0, 1.0);
+                }
+
+                if (bounds.x && !bounds.y) { // moving to left
+                    // if (abs(dyx.y) > 0.0 && abs(dyy.x) > 0.0) {
+                    //     m = abs(dyx.x) / abs(dyx.y);
+                    // }
+                    winding.y -= filtering(y.x * unit, 0.0, 1.0);
+                } else if (!bounds.x && bounds.y) { // moving to right
+                    // if (abs(dyy.y) > 0.0 && abs(dyy.x) > 0.0) {
+                    //     m = abs(dyy.x) / abs(dyy.y);
+                    // }
+                    winding.y += filtering(y.y * unit, 0.0, 1.0);
+                }
+            }
         } break;
         }
     }
