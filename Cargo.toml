@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-grr = { path = "../../repository/grr" } # "0.7"
+grr = { git = "https://github.com/msiglreith/grr.git", rev = "f7db09bc83151f8259228b756d939d6224e60836" }
 
 [dev-dependencies]
 glutin = "0.21"
