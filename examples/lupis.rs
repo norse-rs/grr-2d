@@ -308,12 +308,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        glyph_primitives.push(Primitive::StrokeShade);
+        glyph_primitives.push(Primitive::Fill);
 
         // let glyph_a_id = font.glyph_index('?')?;
         // let mut glyph_a = GlyphBuilderMonotonic::new();
         // let glyph_a_bbox = font.outline_glyph(glyph_a_id, &mut glyph_a).unwrap();
-        // glyph_a.primitives.push(Primitive::StrokeShade);
+        // glyph_a.primitives.push(Primitive::Fill);
         // println!("{:?}", glyph_a_bbox);
         // println!("{:?}", font.units_per_em());
 
