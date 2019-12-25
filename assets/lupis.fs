@@ -13,6 +13,7 @@ layout (location = 1) uniform vec4 u_viewport;
 layout (location = 2) uniform vec2 u_screen_dim;
 
 layout (location = 0) in vec2 f_pos_curve;
+layout (location = 1) flat in uvec3 f_curve_range;
 
 layout (binding = 0, std430) readonly buffer SceneVertices {
     vec2 vertices[];
@@ -23,22 +24,23 @@ layout (binding = 1, std430) readonly buffer ScenePrimitives {
 
 out vec4 o_frag;
 
-float filtering(float x, float lower, float upper)
+float filtering(float x)
 {
-    return smoothstep(-1.0, 1.0, x);
+    return clamp(x, 0.0, 1.0);
+    // return smoothstep(-1.0, 1.0, x);
 }
 
 void main() {
     const vec2 tile_center = f_pos_curve;
     const vec2 tile_extent = fwidth(tile_center);
-    const float unit = 1.0 / length(tile_extent);
+    const float unit = 1.0 / (tile_extent.x);
 
     vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
     float stroke_df = FLOAT_MAX;
     vec2 winding = vec2(0.0);
 
-    uint base_vertex = 0;
-    for (uint i = 0; i < u_num_primitives; i++) {
+    uint base_vertex = f_curve_range.x;
+    for (uint i = f_curve_range.y; i < f_curve_range.z; i++) {
         const uint primitive = primitives[i];
         switch (primitive) {
         case PRIMITIVE_LINE: {
@@ -58,8 +60,8 @@ void main() {
             const float kx = mix(p0.x, p1.x, (0.0 - p0.y) / (p1.y - p0.y));
             const float ky = mix(p0.y, p1.y, (0.0 - p0.x) / (p1.x - p0.x));
 
-            winding.x -= sign_x * filtering(kx * unit, 0.0, 1.0);
-            winding.y += sign_y * filtering(ky * unit, 0.0, 1.0);
+            winding.x -= sign_x * filtering(0.5 - kx * unit);
+            winding.y += sign_y * filtering(0.5 - ky * unit);
         } break;
         case PRIMTIIVE_QUADRATIC_MONO: {
             const vec2 p0 = vertices[base_vertex++] - tile_center;
@@ -83,16 +85,26 @@ void main() {
             const float tx = (b.y + sign_x * dscr.y) / a.y;
             const float ty = (b.x + sign_y * dscr.x) / a.x;
 
-            const float kx = (1 - tx) * (1 - tx) * p0.x + 2.0 * (1 - tx) * tx * p1.x + tx * tx * p2.x;
-            const float ky = (1 - ty) * (1 - ty) * p0.y + 2.0 * (1 - ty) * ty * p1.y + ty * ty * p2.y;
+            const float kx = (a.x * tx - 2 * b.x) * tx + c.x;
+            const float ky = (a.y * ty - 2 * b.y) * ty + c.y;
 
-            winding.x -= sign_x * filtering(kx * unit, 0.0, 1.0);
-            winding.y += sign_y * filtering(ky * unit, 0.0, 1.0);
+            winding.x -= sign_x * filtering(0.5 - kx * unit);
+            winding.y += sign_y * filtering(0.5 - ky * unit);
         } break;
         case PRIMITIVE_FILL: {
-            float alpha = min(winding.x, winding.y);
-            color.rgb = sqrt(vec3(1.0 - alpha));
-            color.a = alpha;
+            winding = abs(winding);
+            float alpha = max(abs(winding.x), abs(winding.y));
+            if (winding.x < -1.0) {
+                color.rgb = vec3(1.0, 0.0, 0.0);
+            } else if (winding.x < 0.0 && winding.x > -1.0) {
+                color.rgb = vec3(0.0, 1.0, winding.x);
+            } else {
+                color.rgb = vec3(0.0, 0.0, 0.0);
+            }
+
+            color.rgb = vec3(winding.x, winding.y, 0.0); // vec3(1.0 - winding.x, 1.0 - winding.y, (1.0 - winding.x) * (1.0 - winding.y));
+            color.a = 1.0;
+            // color = pow(color, vec4(1.0));
             winding = vec2(0.0);
         } break;
         }

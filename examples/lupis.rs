@@ -205,7 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 height: 700.0,
             });
         let window = glutin::ContextBuilder::new()
-            .with_vsync(false)
+            .with_vsync(true)
             .with_srgb(true)
             .with_gl_debug_flag(true)
             .build_windowed(wb, &events_loop)?
@@ -236,7 +236,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             &[
                 SectionText {
-                    text: "Test?",
+                    text: "Ao",
                     scale: Scale::uniform(100.0),
                     ..SectionText::default()
                 },
@@ -244,6 +244,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
 
         let mut glyph_bbox_triangles = Vec::<f32>::new();
+        let mut glyph_bbox_ranges = Vec::<u32>::new();
         let mut glyph_vertices = Vec::<f32>::new();
         let mut glyph_primitives = Vec::<Primitive>::new();
         for (glyph, _, font) in glyphs {
@@ -255,30 +256,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             dbg!(&bbox);
 
             glyph_bbox_triangles.extend(&[
-                pos.x + bbox.min.x as f32, pos.y  + bbox.min.y as f32, pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32,
-                pos.x + bbox.min.x as f32, pos.y  + bbox.max.y as f32, pos.x + bbox.min.x as f32, pos.y + bbox.max.y as f32,
-                pos.x + bbox.max.x as f32, pos.y  + bbox.max.y as f32, pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32,
-                pos.x + bbox.max.x as f32, pos.y  + bbox.min.y as f32, pos.x + bbox.max.x as f32, pos.y + bbox.min.y as f32,
-                pos.x + bbox.min.x as f32, pos.y  + bbox.min.y as f32, pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32,
-                pos.x + bbox.max.x as f32, pos.y  + bbox.max.y as f32, pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32,
+                pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
+                pos.x + bbox.min.x as f32, pos.y + bbox.max.y as f32, bbox.min.x as f32, bbox.max.y as f32,
+                pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
+                pos.x + bbox.max.x as f32, pos.y + bbox.min.y as f32, bbox.max.x as f32, bbox.min.y as f32,
+                pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
+                pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
             ]);
+
+            let mut curve_start = glyph_vertices.len() / 2;
+            let mut primitive_start = glyph_primitives.len();
 
             for shape in shapes {
                 for segment in shape.segments {
                     match segment {
                         Segment::Line(line) => {
-                            glyph_vertices.push(pos.x + line.p[0].x);
-                            glyph_vertices.push(pos.y + line.p[0].y + bbox.min.y + bbox.max.y);
+                            glyph_vertices.push(line.p[0].x);
+                            glyph_vertices.push(line.p[0].y + bbox.min.y + bbox.max.y);
 
-                            glyph_vertices.push(pos.x + line.p[1].x);
-                            glyph_vertices.push(pos.y + line.p[1].y + bbox.min.y + bbox.max.y);
+                            glyph_vertices.push(line.p[1].x);
+                            glyph_vertices.push(line.p[1].y + bbox.min.y + bbox.max.y);
 
                             glyph_primitives.push(Primitive::LineField);
                         }
                         Segment::Curve(curve) => {
-                            let p0 = glm::vec2(pos.x + curve.p[0].x, pos.y + curve.p[0].y + bbox.min.y  + bbox.max.y);
-                            let p1 = glm::vec2(pos.x + curve.p[1].x, pos.y + curve.p[1].y + bbox.min.y  + bbox.max.y);
-                            let p2 = glm::vec2(pos.x + curve.p[2].x, pos.y + curve.p[2].y + bbox.min.y  + bbox.max.y);
+                            let p0 = glm::vec2(curve.p[0].x, curve.p[0].y + bbox.min.y + bbox.max.y);
+                            let p1 = glm::vec2(curve.p[1].x, curve.p[1].y + bbox.min.y + bbox.max.y);
+                            let p2 = glm::vec2(curve.p[2].x, curve.p[2].y + bbox.min.y + bbox.max.y);
 
                             let min = glm::min2(&p0, &p2);
                             let max = glm::max2(&p0, &p2);
@@ -306,29 +310,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+
+            glyph_primitives.push(Primitive::Fill);
+
+            let mut primitive_end = glyph_primitives.len();
+
+            glyph_bbox_ranges.extend(&[
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+                curve_start as u32, primitive_start as u32, primitive_end as u32,
+            ]);
         }
 
-        glyph_primitives.push(Primitive::Fill);
-
-        // let glyph_a_id = font.glyph_index('?')?;
-        // let mut glyph_a = GlyphBuilderMonotonic::new();
-        // let glyph_a_bbox = font.outline_glyph(glyph_a_id, &mut glyph_a).unwrap();
-        // glyph_a.primitives.push(Primitive::Fill);
-        // println!("{:?}", glyph_a_bbox);
-        // println!("{:?}", font.units_per_em());
-
-        // let factor = 0.3;
-
-        // let glyph_bbox_triangles = [
-        //     factor * glyph_a_bbox.x_min as f32, factor * glyph_a_bbox.y_min as f32, glyph_a_bbox.x_min as f32, glyph_a_bbox.y_min as f32,
-        //     factor * glyph_a_bbox.x_min as f32, factor * glyph_a_bbox.y_max as f32, glyph_a_bbox.x_min as f32, glyph_a_bbox.y_max as f32,
-        //     factor * glyph_a_bbox.x_max as f32, factor * glyph_a_bbox.y_max as f32, glyph_a_bbox.x_max as f32, glyph_a_bbox.y_max as f32,
-        //     factor * glyph_a_bbox.x_max as f32, factor * glyph_a_bbox.y_min as f32, glyph_a_bbox.x_max as f32, glyph_a_bbox.y_min as f32,
-        //     factor * glyph_a_bbox.x_min as f32, factor * glyph_a_bbox.y_min as f32, glyph_a_bbox.x_min as f32, glyph_a_bbox.y_min as f32,
-        //     factor * glyph_a_bbox.x_max as f32, factor * glyph_a_bbox.y_max as f32, glyph_a_bbox.x_max as f32, glyph_a_bbox.y_max as f32,
-        // ];
         let glyph_bbox_triangles_data =
             grr.create_buffer_from_host(grr::as_u8_slice(&glyph_bbox_triangles), grr::MemoryFlags::empty())?;
+        let glyph_bbox_ranges_data =
+            grr.create_buffer_from_host(grr::as_u8_slice(&glyph_bbox_ranges), grr::MemoryFlags::empty())?;
 
         let vertex_array = grr.create_vertex_array(&[
             grr::VertexAttributeDesc {
@@ -342,6 +342,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 binding: 0,
                 format: grr::VertexFormat::Xy32Float,
                 offset: 2 * std::mem::size_of::<f32>() as u32,
+            },
+            grr::VertexAttributeDesc {
+                location: 2,
+                binding: 1,
+                format: grr::VertexFormat::Xyz32Uint,
+                offset: 0,
             },
         ])?;
 
@@ -487,6 +493,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     offset: 0,
                     stride: (std::mem::size_of::<f32>() * 4) as _,
                     input_rate: grr::InputRate::Vertex,
+                }, grr::VertexBufferView {
+                    buffer: glyph_bbox_ranges_data,
+                    offset: 0,
+                    stride: (std::mem::size_of::<u32>() * 3) as _,
+                    input_rate: grr::InputRate::Vertex,
                 }],
             );
 
@@ -512,7 +523,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
 
             grr.bind_pipeline(pipeline_raster);
-            grr.bind_color_blend_state(&color_blend);
+            // grr.bind_color_blend_state(&color_blend);
             grr.bind_uniform_constants(
                 pipeline_raster,
                 0,
