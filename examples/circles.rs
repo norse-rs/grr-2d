@@ -1,6 +1,6 @@
-use std::error::Error;
 use glutin::dpi::LogicalSize;
 use rand::prelude::*;
+use std::error::Error;
 
 const SINGLE_PASS: bool = true;
 
@@ -15,7 +15,7 @@ struct CmdCircle {
 }
 
 fn main() -> Result<(), Box<Error>> {
-    let TILE_SIZE_X = if SINGLE_PASS { 8} else { 32 };
+    let TILE_SIZE_X = if SINGLE_PASS { 8 } else { 32 };
     let TILE_SIZE_Y = if SINGLE_PASS { 4 } else { 8 };
 
     unsafe {
@@ -66,7 +66,10 @@ fn main() -> Result<(), Box<Error>> {
         let pipeline_rasterizer = grr.create_compute_pipeline(shader_rasterizer)?;
         let pipeline_single_pass = grr.create_compute_pipeline(shader_single_pass)?;
 
-        let tile_cmd_buffer = grr.create_buffer(MAX_NUM_TILES_X * MAX_NUM_TILES_Y * MAX_TILE_SIZE, grr::MemoryFlags::DEVICE_LOCAL)?;
+        let tile_cmd_buffer = grr.create_buffer(
+            MAX_NUM_TILES_X * MAX_NUM_TILES_Y * MAX_TILE_SIZE,
+            grr::MemoryFlags::DEVICE_LOCAL,
+        )?;
 
         let mut rng = rand::thread_rng();
 
@@ -78,7 +81,12 @@ fn main() -> Result<(), Box<Error>> {
             let bbox_min_x: u16 = rng.gen_range(0, 770.0 as u16);
             let bbox_min_y: u16 = rng.gen_range(0, 350.0 as u16);
 
-            bboxes.push([bbox_min_x as _, bbox_min_y as _, (bbox_min_x + diameter) as _, (bbox_min_y + diameter) as _]);
+            bboxes.push([
+                bbox_min_x as _,
+                bbox_min_y as _,
+                (bbox_min_x + diameter) as _,
+                (bbox_min_y + diameter) as _,
+            ]);
             circles.push(CmdCircle {
                 ty: 0x1,
                 color: 0x40FF0000,
@@ -110,8 +118,10 @@ fn main() -> Result<(), Box<Error>> {
         //     },
         // ];
 
-        let scene_bboxes = grr.create_buffer_from_host(grr::as_u8_slice(&bboxes), grr::MemoryFlags::DEVICE_LOCAL)?;
-        let scene_buffer = grr.create_buffer_from_host(grr::as_u8_slice(&circles), grr::MemoryFlags::DEVICE_LOCAL)?;
+        let scene_bboxes =
+            grr.create_buffer_from_host(grr::as_u8_slice(&bboxes), grr::MemoryFlags::DEVICE_LOCAL)?;
+        let scene_buffer = grr
+            .create_buffer_from_host(grr::as_u8_slice(&circles), grr::MemoryFlags::DEVICE_LOCAL)?;
 
         let color_target = grr.create_image(
             grr::ImageType::D2 {
@@ -137,12 +147,10 @@ fn main() -> Result<(), Box<Error>> {
         grr.set_color_attachments(present_fbo, &[0]);
         grr.bind_attachments(
             present_fbo,
-            &[
-                (
-                    grr::Attachment::Color(0),
-                    grr::AttachmentView::Image(color_target_view),
-                ),
-            ],
+            &[(
+                grr::Attachment::Color(0),
+                grr::AttachmentView::Image(color_target_view),
+            )],
         );
 
         let mut running = true;
@@ -181,38 +189,39 @@ fn main() -> Result<(), Box<Error>> {
 
             if !SINGLE_PASS {
                 grr.bind_pipeline(pipeline_tiler);
-                grr.bind_storage_buffers(0, &[
-                    grr::BufferRange {
-                        buffer: scene_bboxes,
-                        offset: 0,
-                        size: (4 * std::mem::size_of::<f32>() * bboxes.len()) as _,
-                    },
-                    // entities
-                    grr::BufferRange {
-                        buffer: scene_buffer,
-                        offset: 0,
-                        size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
-                    },
-                    // circles
-                    grr::BufferRange {
-                        buffer: scene_buffer,
-                        offset: 0,
-                        size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
-                    },
-                    //
-                    grr::BufferRange {
-                        buffer: tile_cmd_buffer,
-                        offset: 0,
-                        size: (MAX_NUM_TILES_X * MAX_NUM_TILES_Y * MAX_TILE_SIZE) as _,
-                    },
-                ]);
+                grr.bind_storage_buffers(
+                    0,
+                    &[
+                        grr::BufferRange {
+                            buffer: scene_bboxes,
+                            offset: 0,
+                            size: (4 * std::mem::size_of::<f32>() * bboxes.len()) as _,
+                        },
+                        // entities
+                        grr::BufferRange {
+                            buffer: scene_buffer,
+                            offset: 0,
+                            size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
+                        },
+                        // circles
+                        grr::BufferRange {
+                            buffer: scene_buffer,
+                            offset: 0,
+                            size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
+                        },
+                        //
+                        grr::BufferRange {
+                            buffer: tile_cmd_buffer,
+                            offset: 0,
+                            size: (MAX_NUM_TILES_X * MAX_NUM_TILES_Y * MAX_TILE_SIZE) as _,
+                        },
+                    ],
+                );
 
                 grr.bind_uniform_constants(
                     pipeline_tiler,
                     0,
-                    &[
-                        grr::Constant::U32(circles.len() as _),
-                    ],
+                    &[grr::Constant::U32(circles.len() as _)],
                 );
 
                 grr.bind_storage_image_views(0, &[color_target_view]);
@@ -222,44 +231,46 @@ fn main() -> Result<(), Box<Error>> {
 
                 grr.bind_pipeline(pipeline_rasterizer);
 
-                grr.bind_storage_buffers(0, &[
-                    grr::BufferRange {
+                grr.bind_storage_buffers(
+                    0,
+                    &[grr::BufferRange {
                         buffer: tile_cmd_buffer,
                         offset: 0,
                         size: (MAX_NUM_TILES_X * MAX_NUM_TILES_Y * MAX_TILE_SIZE) as _,
-                    },
-                ]);
+                    }],
+                );
 
                 grr.bind_storage_image_views(0, &[color_target_view]);
                 grr.dispatch(num_tiles_x, num_tiles_y, 1);
             } else {
                 grr.bind_pipeline(pipeline_single_pass);
-                grr.bind_storage_buffers(0, &[
-                    grr::BufferRange {
-                        buffer: scene_bboxes,
-                        offset: 0,
-                        size: (4 * std::mem::size_of::<f32>() * bboxes.len()) as _,
-                    },
-                    // entities
-                    grr::BufferRange {
-                        buffer: scene_buffer,
-                        offset: 0,
-                        size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
-                    },
-                    // circles
-                    grr::BufferRange {
-                        buffer: scene_buffer,
-                        offset: 0,
-                        size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
-                    },
-                ]);
+                grr.bind_storage_buffers(
+                    0,
+                    &[
+                        grr::BufferRange {
+                            buffer: scene_bboxes,
+                            offset: 0,
+                            size: (4 * std::mem::size_of::<f32>() * bboxes.len()) as _,
+                        },
+                        // entities
+                        grr::BufferRange {
+                            buffer: scene_buffer,
+                            offset: 0,
+                            size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
+                        },
+                        // circles
+                        grr::BufferRange {
+                            buffer: scene_buffer,
+                            offset: 0,
+                            size: (std::mem::size_of::<CmdCircle>() * circles.len()) as _,
+                        },
+                    ],
+                );
                 grr.bind_storage_image_views(0, &[color_target_view]);
                 grr.bind_uniform_constants(
                     pipeline_single_pass,
                     0,
-                    &[
-                        grr::Constant::U32(circles.len() as _),
-                    ],
+                    &[grr::Constant::U32(circles.len() as _)],
                 );
                 grr.dispatch(num_tiles_x, num_tiles_y, 1);
             }

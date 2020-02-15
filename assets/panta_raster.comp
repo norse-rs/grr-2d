@@ -87,15 +87,6 @@ vec2 solve_cubic(vec4 coeffs)
     }
 }
 
-vec2 quad_eval(vec2 A, vec2 B, vec2 C, float t)
-{
-    const vec3 factor = vec3(1-t*t, 2*t*(1-t), t*t);
-    return vec2(
-        dot(vec3(A.x, B.x, C.x), factor),
-        dot(vec3(A.y, B.y, C.y), factor)
-    );
-}
-
 float df_quadratic_bezier(vec2 b0, vec2 b1, vec2 b2, vec2 p)
 {
     const vec2 a = b1 - b0;

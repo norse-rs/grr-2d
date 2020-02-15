@@ -1,14 +1,14 @@
-use std::error::Error;
 use glutin::dpi::LogicalSize;
 use glutin::ElementState;
-use glyph_brush_layout::{SectionGeometry, SectionText, GlyphPositioner};
-use rusttype::{Segment, Font, Scale};
+use glyph_brush_layout::{GlyphPositioner, SectionGeometry, SectionText};
+use rusttype::{Font, Scale, Segment};
+use std::error::Error;
 
 use nalgebra_glm as glm;
 
 const ROBOTO: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
 
-const VIEW_SCALE: f32 = 800.0;
+const VIEW_SCALE: f32 = 100.0;
 
 #[repr(u32)]
 enum Primitive {
@@ -188,7 +188,10 @@ impl Viewport {
     }
 
     fn get_scale(&self) -> (f32, f32) {
-        (self.scaling_y * self.aspect_ratio * VIEW_SCALE, self.scaling_y * VIEW_SCALE)
+        (
+            self.scaling_y * self.aspect_ratio * VIEW_SCALE,
+            self.scaling_y * VIEW_SCALE,
+        )
     }
 }
 
@@ -234,101 +237,112 @@ fn main() -> Result<(), Box<dyn Error>> {
                 screen_position: (0.0, 0.0),
                 ..SectionGeometry::default()
             },
-            &[
-                SectionText {
-                    text: "Ao",
-                    scale: Scale::uniform(100.0),
-                    ..SectionText::default()
-                },
-            ],
+            &[SectionText {
+                text: "Ao",
+                scale: Scale::uniform(100.0),
+                ..SectionText::default()
+            }],
         );
 
         let mut glyph_bbox_triangles = Vec::<f32>::new();
         let mut glyph_bbox_ranges = Vec::<u32>::new();
         let mut glyph_vertices = Vec::<f32>::new();
         let mut glyph_primitives = Vec::<Primitive>::new();
-        for (glyph, _, font) in glyphs {
-            let bbox = glyph.unpositioned().exact_bounding_box().unwrap();
-            let shapes = glyph.unpositioned().shape().unwrap();
-            let mut pos = glyph.position();
-            pos.y -= bbox.min.y;
 
-            dbg!(&bbox);
+        glyph_bbox_triangles.extend(&[
+            0.0, 0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 0.0,
+            100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, 100.0, 100.0,
+        ]);
+        glyph_bbox_ranges.extend(&[0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
+        glyph_vertices.extend(&[30.0, 30.0, 110.0, 140.0]);
+        glyph_primitives.push(Primitive::LineField);
 
-            glyph_bbox_triangles.extend(&[
-                pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
-                pos.x + bbox.min.x as f32, pos.y + bbox.max.y as f32, bbox.min.x as f32, bbox.max.y as f32,
-                pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
-                pos.x + bbox.max.x as f32, pos.y + bbox.min.y as f32, bbox.max.x as f32, bbox.min.y as f32,
-                pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
-                pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
-            ]);
+        // for (glyph, _, font) in glyphs {
+        //     let bbox = glyph.unpositioned().exact_bounding_box().unwrap();
+        //     let shapes = glyph.unpositioned().shape().unwrap();
+        //     let mut pos = glyph.position();
+        //     pos.y -= bbox.min.y;
 
-            let mut curve_start = glyph_vertices.len() / 2;
-            let mut primitive_start = glyph_primitives.len();
+        //     dbg!(&bbox);
 
-            for shape in shapes {
-                for segment in shape.segments {
-                    match segment {
-                        Segment::Line(line) => {
-                            glyph_vertices.push(line.p[0].x);
-                            glyph_vertices.push(line.p[0].y + bbox.min.y + bbox.max.y);
+        //     glyph_bbox_triangles.extend(&[
+        //         pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
+        //         pos.x + bbox.min.x as f32, pos.y + bbox.max.y as f32, bbox.min.x as f32, bbox.max.y as f32,
+        //         pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
+        //         pos.x + bbox.max.x as f32, pos.y + bbox.min.y as f32, bbox.max.x as f32, bbox.min.y as f32,
+        //         pos.x + bbox.min.x as f32, pos.y + bbox.min.y as f32, bbox.min.x as f32, bbox.min.y as f32,
+        //         pos.x + bbox.max.x as f32, pos.y + bbox.max.y as f32, bbox.max.x as f32, bbox.max.y as f32,
+        //     ]);
 
-                            glyph_vertices.push(line.p[1].x);
-                            glyph_vertices.push(line.p[1].y + bbox.min.y + bbox.max.y);
+        //     let mut curve_start = glyph_vertices.len() / 2;
+        //     let mut primitive_start = glyph_primitives.len();
 
-                            glyph_primitives.push(Primitive::LineField);
-                        }
-                        Segment::Curve(curve) => {
-                            let p0 = glm::vec2(curve.p[0].x, curve.p[0].y + bbox.min.y + bbox.max.y);
-                            let p1 = glm::vec2(curve.p[1].x, curve.p[1].y + bbox.min.y + bbox.max.y);
-                            let p2 = glm::vec2(curve.p[2].x, curve.p[2].y + bbox.min.y + bbox.max.y);
+        //     for shape in shapes {
+        //         for segment in shape.segments {
+        //             match segment {
+        //                 Segment::Line(line) => {
+        //                     glyph_vertices.push(line.p[0].x);
+        //                     glyph_vertices.push(line.p[0].y + bbox.min.y + bbox.max.y);
 
-                            let min = glm::min2(&p0, &p2);
-                            let max = glm::max2(&p0, &p2);
+        //                     glyph_vertices.push(line.p[1].x);
+        //                     glyph_vertices.push(line.p[1].y + bbox.min.y + bbox.max.y);
 
-                            if p1[0] < min[0] || p1[0] > max[0] || p1[1] < min[1] || p1[1] > max[1] {
-                                let t0 = (p0[0] - p1[0]) / (p0[0] - 2.0 * p1[0] + p2[0]);
-                                let t1 = (p0[1] - p1[1]) / (p0[1] - 2.0 * p1[1] + p2[1]);
+        //                     glyph_primitives.push(Primitive::LineField);
+        //                 }
+        //                 Segment::Curve(curve) => {
+        //                     let p0 = glm::vec2(curve.p[0].x, curve.p[0].y + bbox.min.y + bbox.max.y);
+        //                     let p1 = glm::vec2(curve.p[1].x, curve.p[1].y + bbox.min.y + bbox.max.y);
+        //                     let p2 = glm::vec2(curve.p[2].x, curve.p[2].y + bbox.min.y + bbox.max.y);
 
-                                unimplemented!()
-                            } else {
-                                glyph_vertices.push(p0[0]);
-                                glyph_vertices.push(p0[1]);
+        //                     let min = glm::min2(&p0, &p2);
+        //                     let max = glm::max2(&p0, &p2);
 
-                                // b1
-                                glyph_vertices.push(p1[0]);
-                                glyph_vertices.push(p1[1]);
+        //                     if p1[0] < min[0] || p1[0] > max[0] || p1[1] < min[1] || p1[1] > max[1] {
+        //                         let t0 = (p0[0] - p1[0]) / (p0[0] - 2.0 * p1[0] + p2[0]);
+        //                         let t1 = (p0[1] - p1[1]) / (p0[1] - 2.0 * p1[1] + p2[1]);
 
-                                // b2
-                                glyph_vertices.push(p2[0]);
-                                glyph_vertices.push(p2[1]);
+        //                         unimplemented!()
+        //                     } else {
+        //                         glyph_vertices.push(p0[0]);
+        //                         glyph_vertices.push(p0[1]);
 
-                                glyph_primitives.push(Primitive::QuadraticMono);
-                            }
-                        }
-                    }
-                }
-            }
+        //                         // b1
+        //                         glyph_vertices.push(p1[0]);
+        //                         glyph_vertices.push(p1[1]);
 
-            glyph_primitives.push(Primitive::Fill);
+        //                         // b2
+        //                         glyph_vertices.push(p2[0]);
+        //                         glyph_vertices.push(p2[1]);
 
-            let mut primitive_end = glyph_primitives.len();
+        //                         glyph_primitives.push(Primitive::QuadraticMono);
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
 
-            glyph_bbox_ranges.extend(&[
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-                curve_start as u32, primitive_start as u32, primitive_end as u32,
-            ]);
-        }
+        //     glyph_primitives.push(Primitive::Fill);
 
-        let glyph_bbox_triangles_data =
-            grr.create_buffer_from_host(grr::as_u8_slice(&glyph_bbox_triangles), grr::MemoryFlags::empty())?;
-        let glyph_bbox_ranges_data =
-            grr.create_buffer_from_host(grr::as_u8_slice(&glyph_bbox_ranges), grr::MemoryFlags::empty())?;
+        //     let mut primitive_end = glyph_primitives.len();
+
+        //     glyph_bbox_ranges.extend(&[
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //         curve_start as u32, primitive_start as u32, primitive_end as u32,
+        //     ]);
+        // }
+
+        let glyph_bbox_triangles_data = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_bbox_triangles),
+            grr::MemoryFlags::empty(),
+        )?;
+        let glyph_bbox_ranges_data = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_bbox_ranges),
+            grr::MemoryFlags::empty(),
+        )?;
 
         let vertex_array = grr.create_vertex_array(&[
             grr::VertexAttributeDesc {
@@ -391,12 +405,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         grr.set_color_attachments(present_fbo, &[0]);
         grr.bind_attachments(
             present_fbo,
-            &[
-                (
-                    grr::Attachment::Color(0),
-                    grr::AttachmentView::Image(color_target_view),
-                ),
-            ],
+            &[(
+                grr::Attachment::Color(0),
+                grr::AttachmentView::Image(color_target_view),
+            )],
         );
 
         let mut running = true;
@@ -407,8 +419,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         let num_tiles_x = (w as u32 + TILE_SIZE_X - 1) / TILE_SIZE_X;
         let num_tiles_y = (h as u32 + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
 
-        let scene_vertices = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_vertices), grr::MemoryFlags::DEVICE_LOCAL)?;
-        let scene_primitives = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_primitives), grr::MemoryFlags::DEVICE_LOCAL)?;
+        let scene_vertices = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_vertices),
+            grr::MemoryFlags::DEVICE_LOCAL,
+        )?;
+        let scene_primitives = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_primitives),
+            grr::MemoryFlags::DEVICE_LOCAL,
+        )?;
 
         let timer_query = grr.create_query(grr::QueryType::TimeElapsed);
 
@@ -457,7 +475,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 glutin::Event::DeviceEvent {
-                    event: glutin::DeviceEvent::MouseWheel { delta: glutin::MouseScrollDelta::LineDelta(_, delta) },
+                    event:
+                        glutin::DeviceEvent::MouseWheel {
+                            delta: glutin::MouseScrollDelta::LineDelta(_, delta),
+                        },
                     ..
                 } => {
                     viewport.scaling_y *= (delta * -0.1).exp();
@@ -488,17 +509,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             grr.bind_vertex_buffers(
                 vertex_array,
                 0,
-                &[grr::VertexBufferView {
-                    buffer: glyph_bbox_triangles_data,
-                    offset: 0,
-                    stride: (std::mem::size_of::<f32>() * 4) as _,
-                    input_rate: grr::InputRate::Vertex,
-                }, grr::VertexBufferView {
-                    buffer: glyph_bbox_ranges_data,
-                    offset: 0,
-                    stride: (std::mem::size_of::<u32>() * 3) as _,
-                    input_rate: grr::InputRate::Vertex,
-                }],
+                &[
+                    grr::VertexBufferView {
+                        buffer: glyph_bbox_triangles_data,
+                        offset: 0,
+                        stride: (std::mem::size_of::<f32>() * 4) as _,
+                        input_rate: grr::InputRate::Vertex,
+                    },
+                    grr::VertexBufferView {
+                        buffer: glyph_bbox_ranges_data,
+                        offset: 0,
+                        stride: (std::mem::size_of::<u32>() * 3) as _,
+                        input_rate: grr::InputRate::Vertex,
+                    },
+                ],
             );
 
             grr.set_viewport(
@@ -529,26 +553,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                 0,
                 &[
                     grr::Constant::U32(glyph_primitives.len() as _), // primitives
-                    grr::Constant::Vec4(viewport.get_rect()), // viewport
-                    grr::Constant::Vec2([w as f32, h as f32]), // primitives
+                    grr::Constant::Vec4(viewport.get_rect()),        // viewport
+                    grr::Constant::Vec2([w as f32, h as f32]),       // primitives
                 ],
             );
-            grr.bind_storage_buffers(0, &[
-                grr::BufferRange {
-                    buffer: scene_vertices,
-                    offset: 0,
-                    size: (std::mem::size_of::<f32>() * glyph_vertices.len()) as _,
-                },
-                grr::BufferRange {
-                    buffer: scene_primitives,
-                    offset: 0,
-                    size: (std::mem::size_of::<u32>() * glyph_primitives.len()) as _,
-                },
-            ]);
+            grr.bind_storage_buffers(
+                0,
+                &[
+                    grr::BufferRange {
+                        buffer: scene_vertices,
+                        offset: 0,
+                        size: (std::mem::size_of::<f32>() * glyph_vertices.len()) as _,
+                    },
+                    grr::BufferRange {
+                        buffer: scene_primitives,
+                        offset: 0,
+                        size: (std::mem::size_of::<u32>() * glyph_primitives.len()) as _,
+                    },
+                ],
+            );
 
             grr.clear_attachment(
                 present_fbo,
-                grr::ClearAttachment::ColorFloat(0, [1.0, 1.0, 1.0, 0.0]),
+                grr::ClearAttachment::ColorFloat(0, [0.0, 1.0, 0.0, 1.0]),
             );
 
             grr.begin_query(&timer_query);

@@ -8,11 +8,10 @@ edition = "2018"
 
 [dependencies]
 grr = { git = "https://github.com/msiglreith/grr.git", rev = "f7db09bc83151f8259228b756d939d6224e60836" }
+nalgebra-glm = "0.3"
+glyph_brush_layout = "0.1"
+rusttype = "0.8.2"
 
 [dev-dependencies]
 glutin = "0.21"
 rand = "0.7"
-ttf-parser = "0.2"
-nalgebra-glm = "0.3"
-glyph_brush_layout = "0.1"
-rusttype = "0.8.2"

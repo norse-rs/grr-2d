@@ -1,6 +1,6 @@
-use std::error::Error;
 use glutin::dpi::LogicalSize;
 use glutin::ElementState;
+use std::error::Error;
 use std::fmt::Write;
 
 const ROBOTO: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
@@ -175,12 +175,10 @@ fn main() -> Result<(), Box<Error>> {
         grr.set_color_attachments(present_fbo, &[0]);
         grr.bind_attachments(
             present_fbo,
-            &[
-                (
-                    grr::Attachment::Color(0),
-                    grr::AttachmentView::Image(color_target_view),
-                ),
-            ],
+            &[(
+                grr::Attachment::Color(0),
+                grr::AttachmentView::Image(color_target_view),
+            )],
         );
 
         let mut running = true;
@@ -211,8 +209,14 @@ fn main() -> Result<(), Box<Error>> {
         // ];
         // let primitives = [1u32, 1, 2];
 
-        let scene_vertices = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_a.vertices), grr::MemoryFlags::DEVICE_LOCAL)?;
-        let scene_primitives = grr.create_buffer_from_host(grr::as_u8_slice(&glyph_a.primitives), grr::MemoryFlags::DEVICE_LOCAL)?;
+        let scene_vertices = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_a.vertices),
+            grr::MemoryFlags::DEVICE_LOCAL,
+        )?;
+        let scene_primitives = grr.create_buffer_from_host(
+            grr::as_u8_slice(&glyph_a.primitives),
+            grr::MemoryFlags::DEVICE_LOCAL,
+        )?;
 
         let timer_query = grr.create_query(grr::QueryType::TimeElapsed);
 
@@ -245,11 +249,13 @@ fn main() -> Result<(), Box<Error>> {
                     }
                 }
                 glutin::Event::DeviceEvent {
-                    event: glutin::DeviceEvent::MouseWheel { delta: glutin::MouseScrollDelta::LineDelta(_, delta) },
+                    event:
+                        glutin::DeviceEvent::MouseWheel {
+                            delta: glutin::MouseScrollDelta::LineDelta(_, delta),
+                        },
                     ..
                 } => {
                     viewport.scaling_y *= (delta * -0.1).exp();
-
                 }
                 glutin::Event::DeviceEvent {
                     event: glutin::DeviceEvent::Button { state, .. },
@@ -277,21 +283,24 @@ fn main() -> Result<(), Box<Error>> {
                 0,
                 &[
                     grr::Constant::U32(glyph_a.primitives.len() as _), // primitives
-                    grr::Constant::Vec4(viewport.get_rect()), // primitives
+                    grr::Constant::Vec4(viewport.get_rect()),          // primitives
                 ],
             );
-            grr.bind_storage_buffers(0, &[
-                grr::BufferRange {
-                    buffer: scene_vertices,
-                    offset: 0,
-                    size: (std::mem::size_of::<f32>() * glyph_a.vertices.len()) as _,
-                },
-                grr::BufferRange {
-                    buffer: scene_primitives,
-                    offset: 0,
-                    size: (std::mem::size_of::<u32>() * glyph_a.primitives.len()) as _,
-                },
-            ]);
+            grr.bind_storage_buffers(
+                0,
+                &[
+                    grr::BufferRange {
+                        buffer: scene_vertices,
+                        offset: 0,
+                        size: (std::mem::size_of::<f32>() * glyph_a.vertices.len()) as _,
+                    },
+                    grr::BufferRange {
+                        buffer: scene_primitives,
+                        offset: 0,
+                        size: (std::mem::size_of::<u32>() * glyph_a.primitives.len()) as _,
+                    },
+                ],
+            );
             grr.bind_storage_image_views(5, &[color_target_view]);
 
             grr.begin_query(&timer_query);
