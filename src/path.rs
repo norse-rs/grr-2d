@@ -23,7 +23,8 @@ pub enum Curve {
         p1: glm::Vec2,
         p2: glm::Vec2,
     },
-    Circle { center: glm::Vec2, radius: f32 }
+    Circle { center: glm::Vec2, radius: f32 },
+    Arc { center: glm::Vec2, p0: glm::Vec2, p1: glm::Vec2 },
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -84,6 +85,12 @@ impl Curve {
                     max: center + glm::vec2(radius, radius),
                 }
             }
+            Curve::Arc { center, p0, p1 } => {
+                Aabb {
+                    min: glm::Vec2::new(p0.x.min(p1.x), p0.y.min(p1.y)),
+                    max: glm::Vec2::new(p0.x.max(p1.x), p0.y.max(p1.y)),
+                }
+            }
         }
     }
 
@@ -94,6 +101,7 @@ impl Curve {
                 (1.0 - t) * (1.0 - t) * p0 + 2.0 * t * (1.0 - t) * p1 + t * t * p2
             }
             Curve::Circle { .. } => todo!(),
+            Curve::Arc { .. } => todo!(),
         }
     }
 
@@ -139,6 +147,7 @@ impl Curve {
                 }
             }
             Curve::Circle { .. } => vec![*self],
+            Curve::Arc { .. } => vec![*self], // todo
         }
     }
 
@@ -156,6 +165,7 @@ pub enum PathElement {
     MoveTo(glm::Vec2),
     LineTo(glm::Vec2),
     QuadTo(glm::Vec2, glm::Vec2),
+    ArcTo(glm::Vec2, glm::Vec2),
     Close,
 }
 
@@ -182,6 +192,11 @@ impl PathBuilder {
 
     pub fn quad_to(mut self, p1: glm::Vec2, p2: glm::Vec2) -> Self {
         self.elements.push(PathElement::QuadTo(p1, p2));
+        self
+    }
+
+    pub fn arc_to(mut self, center: glm::Vec2, p1: glm::Vec2) -> Self {
+        self.elements.push(PathElement::ArcTo(center, p1));
         self
     }
 
@@ -226,6 +241,7 @@ impl PathBuilder {
                         }
                     }
                 }
+                PathElement::ArcTo(_, _) => todo!(), // validation only
             }
         }
 
@@ -238,6 +254,25 @@ impl PathBuilder {
         let mut p0 = glm::vec2(0.0f32, 0.0f32);
         let mut n0 = glm::vec2(0.0f32, 0.0f32);
         let mut begin = None;
+
+        let add_round_caps = |p: glm::Vec2, n: glm::Vec2, curves: &mut Vec<Curve>| {
+            let pattern = [
+                glm::vec2(-1.0, 0.0),
+                glm::vec2(0.0, 1.0),
+                glm::vec2(1.0, 0.0),
+                glm::vec2(0.0, -1.0)
+            ];
+            let dirs = match (n.x <= 0.0, n.y <= 0.0) {
+                (true, true) => 0,
+                (true, false) => 1,
+                (false, true) => 3,
+                (false, false) => 2,
+            };
+
+            curves.push(Curve::Arc { center: p, p0: p + distance * n, p1: p + distance * pattern[dirs] });
+            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[dirs], p1: p + distance * pattern[(dirs + 1) % 4] });
+            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[(dirs + 1) % 4], p1: p - distance * n });
+        };
 
         for element in &self.elements {
             match *element {
@@ -309,15 +344,14 @@ impl PathBuilder {
                 PathElement::MoveTo(p) => {
                     if let Some((p, n)) = begin.take() {
                         // close off
-                        curves.push(Curve::Line { p0: p - distance * n, p1: p + distance * n });
-                        curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 - distance * n0 });
-
-                        if let CurveCap::Round = caps.0 {
-                            curves.push(Curve::Circle { center: p, radius: distance });
+                        match caps.0 {
+                            CurveCap::Round => add_round_caps(p, -n, &mut curves),
+                            CurveCap::Butt => { curves.push(Curve::Line { p0: p - distance * n, p1: p + distance * n }); }
                         }
 
-                        if let CurveCap::Round = caps.2 {
-                            curves.push(Curve::Circle { center: p0, radius: distance });
+                        match caps.2 {
+                            CurveCap::Round => add_round_caps(p0, n0, &mut curves),
+                            CurveCap::Butt => { curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 - distance * n0 }); }
                         }
                     }
 
@@ -336,26 +370,28 @@ impl PathBuilder {
                         curves.push(Curve::Line { p0: p1 - distance * n, p1: p0 - distance * n }); // extruded
                         curves.push(Curve::Line { p0: p1 - distance * n1, p1: p1 - distance * n }); // connection to initial
 
-                        curves.push(Curve::Circle { center: p0, radius: distance }); // arc cap prior
-                        curves.push(Curve::Circle { center: p1, radius: distance }); // arc cap initial
+                        if let CurveJoin::Round = caps.1 {
+                            curves.push(Curve::Circle { center: p0, radius: distance }); // arc cap prior
+                            curves.push(Curve::Circle { center: p1, radius: distance }); // arc cap initial
+                        }
                     }
 
                 }
+                PathElement::ArcTo(_, _) => todo!(),
             }
         }
 
         // remaining path - same as a move to
         if let Some((p, n)) = begin.take() {
             // close off
-            curves.push(Curve::Line { p0: p - distance * n, p1: p + distance * n });
-            curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 - distance * n0 });
-
-            if let CurveCap::Round = caps.0 {
-                curves.push(Curve::Circle { center: p, radius: distance });
+            match caps.0 {
+                CurveCap::Round => add_round_caps(p, -n, &mut curves),
+                CurveCap::Butt => { curves.push(Curve::Line { p0: p - distance * n, p1: p + distance * n }); }
             }
 
-            if let CurveCap::Round = caps.2 {
-                curves.push(Curve::Circle { center: p0, radius: distance });
+            match caps.2 {
+                CurveCap::Round => add_round_caps(p0, n0, &mut curves),
+                CurveCap::Butt => { curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 - distance * n0 }); }
             }
         }
 
@@ -369,6 +405,7 @@ impl PathBuilder {
                 PathElement::MoveTo(p) => splitter.move_to(p),
                 PathElement::LineTo(p) => splitter.line_to(p),
                 PathElement::QuadTo(p1, p2) => splitter.quad_to(p1, p2),
+                PathElement::ArcTo(center, p1) => splitter.arc_to(center, p1),
                 PathElement::Close => splitter.close(),
             };
         }
@@ -413,6 +450,17 @@ impl PathSplitter {
             p2,
         });
         self.last = p2;
+        self
+    }
+
+    // spooky
+    fn arc_to(mut self, center: glm::Vec2, p1: glm::Vec2) -> Self {
+        self.curves.push(Curve::Arc {
+            center,
+            p0: self.last,
+            p1,
+        });
+        self.last = p1;
         self
     }
 

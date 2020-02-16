@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .line_to(glm::vec2(50.0, 50.0))
             .line_to(glm::vec2(30.0, 0.0))
             // .close()
-            .stroke(4.0, (grr_2d::CurveCap::Butt, grr_2d::CurveJoin::Bevel, grr_2d::CurveCap::Round));
+            .stroke(4.0, (grr_2d::CurveCap::Round, grr_2d::CurveJoin::Bevel, grr_2d::CurveCap::Butt));
         let box_aabb = grr_2d::Aabb::from_curves(&box_path);
         gpu_data.extend(
             &box_path,
@@ -181,17 +181,42 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
         );
 
-        let mut circle_path = vec![grr_2d::Curve::Circle { center: glm::vec2(0.0, 0.0), radius: 4.0 }];
-        let circle_aabb = grr_2d::Aabb::from_curves(&circle_path);
-        gpu_data.extend(
-            &circle_path,
-            grr_2d::Rect {
-                offset_local: circle_aabb.min,
-                extent_local: circle_aabb.max - circle_aabb.min,
-                offset_curve: circle_aabb.min,
-                extent_curve: circle_aabb.max - circle_aabb.min,
-            },
-        );
+        let theta0 = std::f32::consts::PI / 180.0 * 220.0;
+        let theta1 = std::f32::consts::PI / 180.0 * 180.0;
+
+        let (sin0, cos0) = theta0.sin_cos();
+        let (sin1, cos1) = theta1.sin_cos();
+
+        let radius = 100.0;
+
+        // let mut triangle_path = grr_2d::PathBuilder::new()
+        //     .move_to(glm::vec2(0.0, 0.0))
+        //     .line_to(glm::vec2(cos0 * radius, sin0 * radius))
+        //     .arc_to(glm::vec2(0.0, 0.0), glm::vec2(cos1 * radius, sin1 * radius))
+        //     .close()
+        //     .fill().finish();
+        // let triangle_aabb = grr_2d::Aabb::from_curves(&triangle_path);
+        // gpu_data.extend(
+        //     &triangle_path,
+        //     grr_2d::Rect {
+        //         offset_local: triangle_aabb.min,
+        //         extent_local: triangle_aabb.max - triangle_aabb.min,
+        //         offset_curve: triangle_aabb.min,
+        //         extent_curve: triangle_aabb.max - triangle_aabb.min,
+        //     },
+        // );
+
+        // let mut circle_path = vec![grr_2d::Curve::Circle { center: glm::vec2(0.0, 0.0), radius: 4.0 }];
+        // let circle_aabb = grr_2d::Aabb::from_curves(&circle_path);
+        // gpu_data.extend(
+        //     &circle_path,
+        //     grr_2d::Rect {
+        //         offset_local: circle_aabb.min,
+        //         extent_local: circle_aabb.max - circle_aabb.min,
+        //         offset_curve: circle_aabb.min,
+        //         extent_curve: circle_aabb.max - circle_aabb.min,
+        //     },
+        // );
 
         let gpu_vertices = grr.create_buffer_from_host(
             grr::as_u8_slice(&gpu_data.vertices),

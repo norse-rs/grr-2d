@@ -3,6 +3,9 @@ use crate::{Curve, Rect};
 const PRIMITIVE_LINE: u32 = 0x1;
 const PRIMITIVE_QUADRATIC: u32 = 0x2;
 const PRIMITIVE_CIRCLE: u32 = 0x3;
+const PRIMITIVE_ARC: u32 = 0x4;
+
+const PRIMITIVE_FILL: u32 = 0x5;
 
 pub struct GpuData {
     pub vertices: Vec<f32>,
@@ -72,9 +75,13 @@ impl GpuData {
                     self.vertices.extend(&[center.x, center.y, *radius, *radius]);
                     self.primitives.push(PRIMITIVE_CIRCLE);
                 }
+                Curve::Arc { center, p0, p1 } => {
+                    self.vertices.extend(&[center.x, center.y, p0.x - center.x, p0.y - center.y, p1.x - center.x, p1.y - center.y]);
+                    self.primitives.push(PRIMITIVE_ARC);
+                }
             }
         }
-        self.primitives.push(0x4); // fill
+        self.primitives.push(PRIMITIVE_FILL);
         let primitive_end = self.primitives.len() as u32;
 
         self.curve_ranges.extend(&[

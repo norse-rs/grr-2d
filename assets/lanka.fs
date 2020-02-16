@@ -5,8 +5,9 @@ const float FLOAT_MAX = 3.402823466e+38;
 const uint PRIMITIVE_LINE = 0x1; // distance field generation (linear curve)
 const uint PRIMITIVE_QUADRATIC = 0x2; // quadratic curve
 const uint PRIMITIVE_CIRCLE = 0x3;
+const uint PRIMITIVE_ARC = 0x4;
 
-const uint PRIMITIVE_FILL = 0x4;
+const uint PRIMITIVE_FILL = 0x5;
 
 layout (location = 0) uniform uint u_num_primitives;
 layout (location = 1) uniform vec4 u_viewport;
@@ -145,9 +146,42 @@ void main() {
             }
         } break;
 
+        case PRIMITIVE_ARC: {
+            const vec2 center = vertices[base_vertex++] - tile_center;
+            const vec2 d0 = vertices[base_vertex++];
+            const vec2 d1 = vertices[base_vertex++];
+            const vec2 p0 = center + d0;
+            const vec2 p1 = center + d1;
+
+            const float xx0 = clamp(p0.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
+            const float xx1 = clamp(p1.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
+            const float xx = (xx1 - xx0) * unit.x;
+
+            if (xx == 0.0) {
+                continue;
+            }
+
+            float cy = 0.0;
+            if (max(p0.y, p1.y) > -0.5 * dxdy.y) {
+                if (xx != 0.0 && min(p0.y, p1.y) < 0.5 * dxdy.y) {
+                    const float diry = d0.y + d1.y;
+                    const float sign = int(diry > center.y) - int(center.y > diry);
+
+                    const float dx = 0.5 * (xx0 + xx1) - center.x;
+                    const float dy = sqrt(dot(d0, d0) - dx * dx);
+                    const float f = (center.y + sign * dy) * unit.y * abs(dy) / length(d0);
+                    cy = cdf(f);
+                } else {
+                    cy = 1.0;
+                }
+            }
+
+            coverage += cy * xx;
+        } break;
+
         case PRIMITIVE_FILL: {
             color.rgb = vec3(0.0);
-            color.a = clamp(coverage, 0.0, 1.0);
+            color.a = clamp(0.5 * coverage + 0.5, 0.0, 1.0);
 
             coverage = 0.0;
         } break;
