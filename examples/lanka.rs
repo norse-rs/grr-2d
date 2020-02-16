@@ -168,8 +168,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .quad_to(glm::vec2(-20.0, 60.0), glm::vec2(20.0, 70.0))
             .line_to(glm::vec2(50.0, 50.0))
             .line_to(glm::vec2(30.0, 0.0))
+            .monotonize()
             // .close()
-            .stroke(4.0, (grr_2d::CurveCap::Round, grr_2d::CurveJoin::Bevel, grr_2d::CurveCap::Butt));
+            .stroke(4.0, (grr_2d::CurveCap::Round, grr_2d::CurveJoin::Round, grr_2d::CurveCap::Butt));
         let box_aabb = grr_2d::Aabb::from_curves(&box_path);
         gpu_data.extend(
             &box_path,

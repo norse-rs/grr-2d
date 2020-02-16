@@ -274,6 +274,66 @@ impl PathBuilder {
             curves.push(Curve::Arc { center: p, p0: p + distance * pattern[(dirs + 1) % 4], p1: p - distance * n });
         };
 
+        let add_round_join = |p: glm::Vec2, n0: glm::Vec2, n1: glm::Vec2, curves: &mut Vec<Curve>| {
+            dbg!((p, n0, n1));
+
+            let pattern = [
+                glm::vec2(-1.0, 0.0),
+                glm::vec2(0.0, 1.0),
+                glm::vec2(1.0, 0.0),
+                glm::vec2(0.0, -1.0)
+            ];
+            let mut d0 = match (n0.x <= 0.0, n0.y <= 0.0) {
+                (true, true) => 0i32,
+                (true, false) => 1,
+                (false, true) => 3,
+                (false, false) => 2,
+            };
+
+            let mut d1 = match (n1.x <= 0.0, n1.y <= 0.0) {
+                (true, true) => 0i32,
+                (true, false) => 1,
+                (false, true) => 3,
+                (false, false) => 2,
+            };
+
+            if (d1 - d0 + 4) % 4 > 2 {
+                std::mem::swap(&mut d0, &mut d1);
+            }
+
+            if d1 < d0 {
+                d1 += 4;
+            }
+
+            let mut p0 = p + distance * n0;
+            dbg!((d0, d1));
+            for i in d0..d1 {
+                let p1 = p + distance * pattern[i as usize % 4];
+                curves.push(dbg!(Curve::Arc { center: p, p0, p1 }));
+                p0 = p1;
+            }
+            curves.push(dbg!(Curve::Arc { center: p, p0, p1: p + distance * n1}));
+        };
+
+        let add_round_caps = |p: glm::Vec2, n: glm::Vec2, curves: &mut Vec<Curve>| {
+            let pattern = [
+                glm::vec2(-1.0, 0.0),
+                glm::vec2(0.0, 1.0),
+                glm::vec2(1.0, 0.0),
+                glm::vec2(0.0, -1.0)
+            ];
+            let dirs = match (n.x <= 0.0, n.y <= 0.0) {
+                (true, true) => 0,
+                (true, false) => 1,
+                (false, true) => 3,
+                (false, false) => 2,
+            };
+
+            curves.push(Curve::Arc { center: p, p0: p + distance * n, p1: p + distance * pattern[dirs] });
+            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[dirs], p1: p + distance * pattern[(dirs + 1) % 4] });
+            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[(dirs + 1) % 4], p1: p - distance * n });
+        };
+
         for element in &self.elements {
             match *element {
                 PathElement::LineTo(p1) => {
@@ -286,13 +346,15 @@ impl PathBuilder {
 
                     match begin {
                         Some(_) => {
-                            // direct connection to prior curve
-                            curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 + distance * n });
-                            curves.push(Curve::Line { p0: p0 - distance * n, p1: p0 - distance * n0 });
-
-                            // arc caps
-                            if let CurveJoin::Round = caps.1 {
-                                curves.push(Curve::Circle { center: p0, radius: distance });
+                            match caps.1 {
+                                CurveJoin::Round => {
+                                    add_round_join(p0, n0, n, &mut curves);
+                                    add_round_join(p0, -n, -n0, &mut curves);
+                                }
+                                CurveJoin::Bevel => {
+                                    curves.push(dbg!(Curve::Line { p0: p0 + distance * n0, p1: p0 + distance * n }));
+                                    curves.push(dbg!(Curve::Line { p0: p0 - distance * n, p1: p0 - distance * n0 }));
+                                }
                             }
                         }
                         None => {
@@ -324,13 +386,15 @@ impl PathBuilder {
 
                     match begin {
                         Some(_) => {
-                            // direct connection to prior curve
-                            curves.push(Curve::Line { p0: p0 + distance * n0, p1: p0 + distance * normal0 });
-                            curves.push(Curve::Line { p0: p0 - distance * normal0, p1: p0 - distance * n0 });
-
-                            // arc caps
-                            if let CurveJoin::Round = caps.1 {
-                                curves.push(Curve::Circle { center: p0, radius: distance });
+                            match caps.1 {
+                                CurveJoin::Round => {
+                                    add_round_join(p0, n0, normal0, &mut curves);
+                                    add_round_join(p0, -normal0, -n0, &mut curves);
+                                }
+                                CurveJoin::Bevel => {
+                                    curves.push(dbg!(Curve::Line { p0: p0 + distance * n0, p1: p0 + distance * normal0 }));
+                                    curves.push(dbg!(Curve::Line { p0: p0 - distance * normal0, p1: p0 - distance * n0 }));
+                                }
                             }
                         }
                         None => {
