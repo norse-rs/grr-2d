@@ -10,10 +10,8 @@ impl Viewport {
         let width = self.aspect_ratio * height;
 
         let (cx, cy) = self.position;
-        let x = cx - width / 2.0;
-        let y = cy - height / 2.0;
 
-        [x, y, width, height]
+        [cx, cy, width, height]
     }
 
     pub fn get_scale(&self) -> (f32, f32) {

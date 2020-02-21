@@ -1,10 +1,12 @@
 use nalgebra_glm as glm;
 
+mod brush;
 mod gpu;
 mod path;
 mod text;
 mod viewport;
 
+pub use crate::brush::*;
 pub use crate::gpu::*;
 pub use crate::path::*;
 pub use crate::text::*;

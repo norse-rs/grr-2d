@@ -6,6 +6,7 @@ layout (location = 2) in uvec3 v_curve_range;
 
 layout (location = 0) out vec2 a_pos_curve;
 layout (location = 1) out uvec3 a_curve_range;
+layout (location = 2) out vec2 a_pos_world;
 
 layout (location = 1) uniform vec4 u_viewport;
 
@@ -15,6 +16,7 @@ void main() {
 
     a_pos_curve = v_pos_curve;
     a_curve_range = v_curve_range;
+    a_pos_world = v_pos_world;
 
     // World -> View
     const vec2 a_pos_view = (v_pos_world - viewport_pos) / (0.5 * viewport_size);

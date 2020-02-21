@@ -7,10 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-grr = { git = "https://github.com/msiglreith/grr.git", rev = "f7db09bc83151f8259228b756d939d6224e60836" }
+grr = { git = "https://github.com/msiglreith/grr.git", rev = "31504264d981957e0c633a60c8564a43ce351147" }
 nalgebra-glm = "0.3"
 glyph_brush_layout = "0.1"
 rusttype = "0.8.2"
+half = "1.4"
+lyon_geom = "0.15"
 
 [dev-dependencies]
 glutin = "0.21"

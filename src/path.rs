@@ -79,13 +79,12 @@ impl Curve {
                 }
             }
             Curve::Circle { center, radius } => {
-                dbg!(center + glm::vec2(radius, radius));
                 Aabb {
                     min: center - glm::vec2(radius, radius),
                     max: center + glm::vec2(radius, radius),
                 }
             }
-            Curve::Arc { center, p0, p1 } => {
+            Curve::Arc { p0, p1, .. } => {
                 Aabb {
                     min: glm::Vec2::new(p0.x.min(p1.x), p0.y.min(p1.y)),
                     max: glm::Vec2::new(p0.x.max(p1.x), p0.y.max(p1.y)),
@@ -205,7 +204,7 @@ impl PathBuilder {
         self
     }
 
-    pub fn monotonize(mut self) -> Self {
+    pub fn monotonize(self) -> Self {
         let mut builder = PathBuilder::new();
 
         let mut p0 = glm::vec2(0.0f32, 0.0f32);
@@ -226,10 +225,6 @@ impl PathBuilder {
                     builder.elements.push(PathElement::Close);
                     p0 = initial;
                 }
-                PathElement::LineTo(p) => {
-                    builder.elements.push(PathElement::LineTo(p));
-                    p0 = p;
-                }
                 PathElement::QuadTo(p1, p2) => {
                     let curves = Curve::Quad { p0, p1, p2}.monotonize();
                     for curve in curves {
@@ -248,35 +243,14 @@ impl PathBuilder {
         builder
     }
 
-    pub fn stroke(mut self, distance: f32, caps: (CurveCap, CurveJoin, CurveCap)) -> Vec<Curve> {
+    pub fn stroke(self, distance: f32, caps: (CurveCap, CurveJoin, CurveCap)) -> Vec<Curve> {
         let mut curves = Vec::new();
 
         let mut p0 = glm::vec2(0.0f32, 0.0f32);
         let mut n0 = glm::vec2(0.0f32, 0.0f32);
         let mut begin = None;
 
-        let add_round_caps = |p: glm::Vec2, n: glm::Vec2, curves: &mut Vec<Curve>| {
-            let pattern = [
-                glm::vec2(-1.0, 0.0),
-                glm::vec2(0.0, 1.0),
-                glm::vec2(1.0, 0.0),
-                glm::vec2(0.0, -1.0)
-            ];
-            let dirs = match (n.x <= 0.0, n.y <= 0.0) {
-                (true, true) => 0,
-                (true, false) => 1,
-                (false, true) => 3,
-                (false, false) => 2,
-            };
-
-            curves.push(Curve::Arc { center: p, p0: p + distance * n, p1: p + distance * pattern[dirs] });
-            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[dirs], p1: p + distance * pattern[(dirs + 1) % 4] });
-            curves.push(Curve::Arc { center: p, p0: p + distance * pattern[(dirs + 1) % 4], p1: p - distance * n });
-        };
-
         let add_round_join = |p: glm::Vec2, n0: glm::Vec2, n1: glm::Vec2, curves: &mut Vec<Curve>| {
-            dbg!((p, n0, n1));
-
             let pattern = [
                 glm::vec2(-1.0, 0.0),
                 glm::vec2(0.0, 1.0),

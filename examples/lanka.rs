@@ -6,6 +6,14 @@ use std::error::Error;
 
 const ROBOTO: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
 
+pub struct FrameTime(f32);
+
+impl FrameTime {
+    pub fn update(&mut self, t: f32) {
+        self.0 = self.0 * 0.95 + 0.05 * t;
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         let mut events_loop = glutin::EventsLoop::new();
@@ -16,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 height: 700.0,
             });
         let window = glutin::ContextBuilder::new()
-            .with_vsync(true)
+            .with_vsync(false)
             .with_srgb(true)
             .with_gl_debug_flag(true)
             .build_windowed(wb, &events_loop)?
@@ -101,7 +109,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ..grr_2d::SectionGeometry::default()
             },
             &[grr_2d::SectionText {
-                text: "ABCDE",
+                text: "The quick brown fox jumps over the lazy dog",
                 scale: grr_2d::Scale::uniform(112.0),
                 ..grr_2d::SectionText::default()
             }],
@@ -159,7 +167,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ),
             };
 
-            gpu_data.extend(&curves, rect);
+            gpu_data.extend(&curves, rect, &grr_2d::Brush::LinearGradient {
+                stop0: grr_2d::GradientStop {
+                    position: glm::vec2(0.0, 80.0),
+                    color: [255, 100, 0, 255],
+                },
+                stop1: grr_2d::GradientStop {
+                    position: glm::vec2(0.0, 150.0),
+                    color: [255, 0, 70, 255],
+                }
+            });
         }
 
         let mut box_path = grr_2d::PathBuilder::new();
@@ -169,7 +186,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             .line_to(glm::vec2(50.0, 50.0))
             .line_to(glm::vec2(30.0, 0.0))
             .monotonize()
-            // .close()
             .stroke(4.0, (grr_2d::CurveCap::Round, grr_2d::CurveJoin::Round, grr_2d::CurveCap::Butt));
         let box_aabb = grr_2d::Aabb::from_curves(&box_path);
         gpu_data.extend(
@@ -180,44 +196,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 offset_curve: box_aabb.min,
                 extent_curve: box_aabb.max - box_aabb.min,
             },
+            &grr_2d::Brush::Color([255, 0, 0, 255]),
         );
-
-        let theta0 = std::f32::consts::PI / 180.0 * 220.0;
-        let theta1 = std::f32::consts::PI / 180.0 * 180.0;
-
-        let (sin0, cos0) = theta0.sin_cos();
-        let (sin1, cos1) = theta1.sin_cos();
-
-        let radius = 100.0;
-
-        // let mut triangle_path = grr_2d::PathBuilder::new()
-        //     .move_to(glm::vec2(0.0, 0.0))
-        //     .line_to(glm::vec2(cos0 * radius, sin0 * radius))
-        //     .arc_to(glm::vec2(0.0, 0.0), glm::vec2(cos1 * radius, sin1 * radius))
-        //     .close()
-        //     .fill().finish();
-        // let triangle_aabb = grr_2d::Aabb::from_curves(&triangle_path);
-        // gpu_data.extend(
-        //     &triangle_path,
-        //     grr_2d::Rect {
-        //         offset_local: triangle_aabb.min,
-        //         extent_local: triangle_aabb.max - triangle_aabb.min,
-        //         offset_curve: triangle_aabb.min,
-        //         extent_curve: triangle_aabb.max - triangle_aabb.min,
-        //     },
-        // );
-
-        // let mut circle_path = vec![grr_2d::Curve::Circle { center: glm::vec2(0.0, 0.0), radius: 4.0 }];
-        // let circle_aabb = grr_2d::Aabb::from_curves(&circle_path);
-        // gpu_data.extend(
-        //     &circle_path,
-        //     grr_2d::Rect {
-        //         offset_local: circle_aabb.min,
-        //         extent_local: circle_aabb.max - circle_aabb.min,
-        //         offset_curve: circle_aabb.min,
-        //         extent_curve: circle_aabb.max - circle_aabb.min,
-        //     },
-        // );
 
         let gpu_vertices = grr.create_buffer_from_host(
             grr::as_u8_slice(&gpu_data.vertices),
@@ -237,13 +217,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut running = true;
 
         let mut time_last = std::time::Instant::now();
-        let mut avg_frametime = 0.0;
+        let mut avg_frametime_cpu = FrameTime(0.0);
+        let mut avg_frametime_gpu = FrameTime(0.0);
 
         let mut viewport = grr_2d::Viewport {
             position: (0.0, 0.0),
             scaling_y: h as _,
             aspect_ratio: (w / h) as _,
         };
+
+        let query = [
+            grr.create_query(grr::QueryType::Timestamp),
+            grr.create_query(grr::QueryType::Timestamp),
+        ];
 
         let mut mouse1 = ElementState::Released;
 
@@ -289,11 +275,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let time_now = std::time::Instant::now();
             let elapsed = time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
             time_last = time_now;
-            avg_frametime *= 0.95;
-            avg_frametime += 0.05 * elapsed;
+            avg_frametime_cpu.update(elapsed);
             window.window().set_title(&format!(
-                "grr-2d :: frame: {:.2} ms",
-                avg_frametime * 1000.0
+                "grr-2d :: frame: cpu: {:.2} ms | gpu: {:.2} ms",
+                avg_frametime_cpu.0 * 1000.0,
+                avg_frametime_gpu.0 * 1000.0,
             ));
 
             grr.bind_vertex_array(vertex_array);
@@ -354,7 +340,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     grr::BufferRange {
                         buffer: gpu_vertices,
                         offset: 0,
-                        size: (std::mem::size_of::<f32>() * gpu_data.vertices.len()) as _,
+                        size: (std::mem::size_of::<u32>() * gpu_data.vertices.len()) as _,
                     },
                     grr::BufferRange {
                         buffer: gpu_primitives,
@@ -369,10 +355,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 grr::ClearAttachment::ColorFloat(0, [1.0, 1.0, 1.0, 0.0]),
             );
 
+            grr.write_timestamp(query[0]);
+
             let num_vertices = gpu_data.bbox.len() as u32 / 4;
             grr.draw(grr::Primitive::Triangles, 0..num_vertices, 0..1);
 
+            grr.write_timestamp(query[1]);
+
+            let t0 = grr.get_query_result_u64(query[0], grr::QueryResultFlags::WAIT);
+            let t1 = grr.get_query_result_u64(query[1], grr::QueryResultFlags::WAIT);
+
             window.swap_buffers()?;
+
+            avg_frametime_gpu.update((t1 - t0) as f32 / 1_000_000_000.0f32);
         }
     }
 
