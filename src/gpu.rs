@@ -1,10 +1,11 @@
-use crate::{Curve, Rect, Brush};
+use crate::{Brush, Curve, Rect};
 
 const PRIMITIVE_LINE: u32 = 0x1;
 const PRIMITIVE_QUADRATIC: u32 = 0x2;
 const PRIMITIVE_CIRCLE: u32 = 0x3;
 const PRIMITIVE_ARC: u32 = 0x4;
 const PRIMITIVE_RECT: u32 = 0x5;
+const PRIMITIVE_SHADOW_RECT: u32 = 0x6;
 
 const PRIMITIVE_FILL_COLOR: u32 = 0x10;
 const PRIMITIVE_FILL_LINEAR_GRADIENT: u32 = 0x11;
@@ -51,8 +52,6 @@ impl GpuData {
         let min_curve = rect.offset_curve;
         let max_curve = rect.offset_curve + rect.extent_curve;
 
-        dbg!(&rect);
-
         self.bbox.extend(&[
             min_local.x,
             min_local.y,
@@ -83,20 +82,35 @@ impl GpuData {
         for curve in path {
             match curve {
                 Curve::Line { p0, p1 } => {
-                    self.vertices.extend(&[pack_f16x2(p0.x, p0.y), pack_f16x2(p1.x, p1.y)]);
+                    self.vertices
+                        .extend(&[pack_f16x2(p0.x, p0.y), pack_f16x2(p1.x, p1.y)]);
                     self.primitives.push(PRIMITIVE_LINE);
                 }
                 Curve::Quad { p0, p1, p2 } => {
-                    self.vertices.extend(&[pack_f16x2(p0.x, p0.y), pack_f16x2(p1.x, p1.y), pack_f16x2(p2.x, p2.y)]);
+                    self.vertices.extend(&[
+                        pack_f16x2(p0.x, p0.y),
+                        pack_f16x2(p1.x, p1.y),
+                        pack_f16x2(p2.x, p2.y),
+                    ]);
                     self.primitives.push(PRIMITIVE_QUADRATIC);
                 }
                 Curve::Circle { center, radius } => {
-                    self.vertices.extend(&[pack_f16x2(center.x, center.y), pack_f32(*radius)]);
+                    self.vertices
+                        .extend(&[pack_f16x2(center.x, center.y), pack_f32(*radius)]);
                     self.primitives.push(PRIMITIVE_CIRCLE);
                 }
                 Curve::Arc { center, p0, p1 } => {
-                    self.vertices.extend(&[pack_f16x2(center.x, center.y), pack_f16x2(p0.x - center.x, p0.y - center.y), pack_f16x2(p1.x - center.x, p1.y - center.y)]);
+                    self.vertices.extend(&[
+                        pack_f16x2(center.x, center.y),
+                        pack_f16x2(p0.x - center.x, p0.y - center.y),
+                        pack_f16x2(p1.x - center.x, p1.y - center.y),
+                    ]);
                     self.primitives.push(PRIMITIVE_ARC);
+                }
+                Curve::Rect { p0, p1 } => {
+                    self.vertices
+                        .extend(&[pack_f16x2(p0.x, p0.y), pack_f16x2(p1.x, p1.y)]);
+                    self.primitives.push(PRIMITIVE_RECT);
                 }
             }
         }
@@ -106,14 +120,29 @@ impl GpuData {
                 self.primitives.push(PRIMITIVE_FILL_COLOR);
                 self.vertices.push(pack_unorm8x4(c[0], c[1], c[2], c[3]));
             }
-            Brush::LinearGradient { ref stop0, ref stop1 } => {
+            Brush::LinearGradient {
+                ref stop0,
+                ref stop1,
+            } => {
                 self.primitives.push(PRIMITIVE_FILL_LINEAR_GRADIENT);
 
-                self.vertices.push(pack_f16x2(stop0.position.x, stop0.position.y));
-                self.vertices.push(pack_unorm8x4(stop0.color[0], stop0.color[1], stop0.color[2], stop0.color[3]));
+                self.vertices
+                    .push(pack_f16x2(stop0.position.x, stop0.position.y));
+                self.vertices.push(pack_unorm8x4(
+                    stop0.color[0],
+                    stop0.color[1],
+                    stop0.color[2],
+                    stop0.color[3],
+                ));
 
-                self.vertices.push(pack_f16x2(stop1.position.x, stop1.position.y));
-                self.vertices.push(pack_unorm8x4(stop1.color[0], stop1.color[1], stop1.color[2], stop1.color[3]));
+                self.vertices
+                    .push(pack_f16x2(stop1.position.x, stop1.position.y));
+                self.vertices.push(pack_unorm8x4(
+                    stop1.color[0],
+                    stop1.color[1],
+                    stop1.color[2],
+                    stop1.color[3],
+                ));
             }
         }
 

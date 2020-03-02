@@ -13,7 +13,9 @@ glyph_brush_layout = "0.1"
 rusttype = "0.8.2"
 half = "1.4"
 lyon_geom = "0.15"
+allsorts = "0.3"
+glutin = "0.21"
 
 [dev-dependencies]
-glutin = "0.21"
 rand = "0.7"
+random_color = "0.4"

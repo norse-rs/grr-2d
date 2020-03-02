@@ -6,6 +6,8 @@ const uint PRIMITIVE_LINE = 0x1; // distance field generation (linear curve)
 const uint PRIMITIVE_QUADRATIC = 0x2; // quadratic curve
 const uint PRIMITIVE_CIRCLE = 0x3;
 const uint PRIMITIVE_ARC = 0x4;
+const uint PRIMITIVE_RECT = 0x5;
+const uint PRIMITIVE_SHADOW_RECT = 0x6;
 
 const uint PRIMITIVE_FILL_COLOR = 0x10;
 const uint PRIMITIVE_FILL_LINEAR_GRADIENT = 0x11;
@@ -60,8 +62,13 @@ float erf(float x) {
     return s - s / (x * x);
 }
 
-float cdf(float x) {
-    return smoothstep(-0.8, 0.8, x);
+// float cdf(float x, float ddx) {
+//     return smoothstep(-0.8, 0.8, x * ddx);
+// }
+
+// box filtering - good for precise cases
+float cdf(float x, float ddx) {
+    return clamp(x * ddx + 0.5, 0.0, 1.0);
 }
 
 out vec4 o_frag;
@@ -74,6 +81,7 @@ void main() {
 
     vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
     float coverage = 0.0;
+    float shadow = 0.0;
 
     uint base_vertex = f_curve_range.x;
     for (uint i = f_curve_range.y; i < f_curve_range.z; i++) {
@@ -97,7 +105,7 @@ void main() {
                 const float d = line_eval(p0.y, p1.y, t) * unit.y; // get x value at ray intersection
                 const vec2 tangent = p1 - p0;
                 const float ddy = abs(tangent.x) / length(tangent);
-                cy = cdf(d * ddy);
+                cy = cdf(d, ddy);
             }
 
             coverage += cy * xx;
@@ -121,7 +129,7 @@ void main() {
                 const float d = quad_eval(p0.y, p1.y, p2.y, t) * unit.y; // get x value at ray intersection
                 const vec2 tangent = mix(p1 - p0, p2 - p1, t);
                 const float ddy = abs(tangent.x) / length(tangent);
-                cy = cdf(d * ddy);
+                cy = cdf(d, ddy);
             }
 
             coverage += cy * xx;
@@ -146,8 +154,8 @@ void main() {
                 const float dy0 = (center.y - dy) * unit.y;
                 const float dy1 = (center.y + dy) * unit.y;
 
-                coverage -= xx * cdf(dy0 * ddy);
-                coverage += xx * cdf(dy1 * ddy);
+                coverage -= xx * cdf(dy0, ddy);
+                coverage += xx * cdf(dy1, ddy);
             }
         } break;
 
@@ -176,13 +184,40 @@ void main() {
                     const float dy = sqrt(dot(d0, d0) - dx * dx);
                     const float d = (center.y + sign * dy) * unit.y;
                     const float ddy = abs(dy) / length(d0);
-                    cy = cdf(d * ddy);
+                    cy = cdf(d, ddy);
                 } else {
                     cy = 1.0;
                 }
             }
 
             coverage += cy * xx;
+        } break;
+
+        case PRIMITIVE_RECT: {
+            const vec2 p0 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
+            const vec2 p1 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
+
+            const float xx0 = clamp(p0.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
+            const float xx1 = clamp(p1.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
+            const float xx = (xx1 - xx0) * unit.x;
+
+            const float dy0 = p0.y * unit.y;
+            const float dy1 = p1.y * unit.y;
+
+            coverage -= xx * cdf(dy0, 1.0);
+            coverage += xx * cdf(dy1, 1.0);
+        } break;
+
+        case PRIMITIVE_SHADOW_RECT: {
+            const vec2 p0 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
+            const vec2 p1 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
+            const float sigma = uintBitsToFloat(vertices[base_vertex++]);
+
+            const float norm = sqrt(0.5) / sigma;
+            const float sy = 0.5 * (erf(p1.y * norm) - erf(p0.y * norm));
+            const float sx = 0.5 * (erf(p1.x * norm) - erf(p0.x * norm));
+
+            coverage += sy * sx;
         } break;
 
         case PRIMITIVE_FILL_COLOR: {
@@ -206,9 +241,8 @@ void main() {
             color.a = clamp(coverage, 0.0, 1.0);
             coverage = 0.0;
         } break;
-
         }
     }
 
-    o_frag = color;
+    o_frag = color; // vec4(shadow, shadow, shadow, 1.0);
 }
