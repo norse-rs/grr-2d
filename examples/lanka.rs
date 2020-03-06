@@ -134,5 +134,5 @@ fn main() -> Result<(), Box<dyn Error>> {
         &grr_2d::Brush::Color([100, 100, 200, 255]),
     );
 
-    unsafe { grr_2d::run("lanka", gpu_data) }
+    unsafe { grr_2d::run_wgpu("lanka", gpu_data) }
 }

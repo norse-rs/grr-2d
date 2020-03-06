@@ -3,7 +3,7 @@ use glutin::dpi::LogicalSize;
 use glutin::ElementState;
 use std::error::Error;
 
-pub struct FrameTime(f32);
+struct FrameTime(f32);
 
 impl FrameTime {
     pub fn update(&mut self, t: f32) {

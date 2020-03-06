@@ -15,6 +15,9 @@ half = "1.4"
 lyon_geom = "0.15"
 allsorts = "0.3"
 glutin = "0.21"
+winit = "0.21"
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs.git", rev = "82aff01" }
+zerocopy = "0.2"
 
 [dev-dependencies]
 rand = "0.7"

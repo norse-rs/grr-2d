@@ -12,9 +12,17 @@ const uint PRIMITIVE_SHADOW_RECT = 0x6;
 const uint PRIMITIVE_FILL_COLOR = 0x10;
 const uint PRIMITIVE_FILL_LINEAR_GRADIENT = 0x11;
 
-layout (location = 0) uniform uint u_num_primitives;
-layout (location = 1) uniform vec4 u_viewport;
-layout (location = 2) uniform vec2 u_screen_dim;
+// #if 0
+// layout (location = 0) uniform uint u_num_primitives;
+// layout (location = 1) uniform vec4 u_viewport;
+// layout (location = 2) uniform vec2 u_screen_dim;
+// # else
+layout(binding = 2) uniform Locals {
+    vec4 u_viewport;
+    vec2 u_screen_dim;
+    uint u_num_primitives;
+};
+// #endif
 
 layout (location = 0) in vec2 f_pos_curve;
 layout (location = 1) flat in uvec3 f_curve_range;
@@ -71,7 +79,7 @@ float cdf(float x, float ddx) {
     return clamp(x * ddx + 0.5, 0.0, 1.0);
 }
 
-out vec4 o_frag;
+layout(location = 0) out vec4 o_frag;
 
 void main() {
     const vec2 tile_center = f_pos_curve;

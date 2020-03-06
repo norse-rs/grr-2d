@@ -1,6 +1,7 @@
 use nalgebra_glm as glm;
 
 mod app;
+mod app_wgpu;
 mod brush;
 mod gpu;
 mod path;
@@ -8,6 +9,7 @@ mod text;
 mod viewport;
 
 pub use crate::app::*;
+pub use crate::app_wgpu::*;
 pub use crate::brush::*;
 pub use crate::gpu::*;
 pub use crate::path::*;
