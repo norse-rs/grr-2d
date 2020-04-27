@@ -1,17 +1,12 @@
-use crate::{GpuData, Viewport};
+use crate::{GpuData, Viewport, FrameTime};
 use glutin::dpi::LogicalSize;
 use glutin::ElementState;
 use std::error::Error;
 
-struct FrameTime(f32);
-
-impl FrameTime {
-    pub fn update(&mut self, t: f32) {
-        self.0 = self.0 * 0.95 + 0.05 * t;
-    }
-}
-
-pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn Error>> {
+pub unsafe fn run<F>(name: &'static str, mut update: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnMut() -> GpuData,
+{
     let mut events_loop = glutin::EventsLoop::new();
     let wb = glutin::WindowBuilder::new()
         .with_title(name)
@@ -20,7 +15,7 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
             height: 700.0,
         });
     let window = glutin::ContextBuilder::new()
-        .with_vsync(false)
+        .with_vsync(true)
         .with_srgb(true)
         .with_gl_debug_flag(true)
         .build_windowed(wb, &events_loop)?
@@ -36,7 +31,9 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
         |symbol| window.get_proc_address(symbol) as *const _,
         grr::Debug::Enable {
             callback: |report, _, _, _, msg| {
-                println!("{:?}: {:?}", report, msg);
+                if report != grr::DebugReport::NOTIFICATION {
+                    println!("{:?}: {:?}", report, msg);
+                }
             },
             flags: grr::DebugReport::FULL,
         },
@@ -94,21 +91,6 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
         fragment_shader: Some(shader_fs),
     })?;
 
-    let gpu_vertices = grr.create_buffer_from_host(
-        grr::as_u8_slice(&gpu_data.vertices),
-        grr::MemoryFlags::empty(),
-    )?;
-    let gpu_bbox =
-        grr.create_buffer_from_host(grr::as_u8_slice(&gpu_data.bbox), grr::MemoryFlags::empty())?;
-    let gpu_primitives = grr.create_buffer_from_host(
-        grr::as_u8_slice(&gpu_data.primitives),
-        grr::MemoryFlags::empty(),
-    )?;
-    let gpu_curve_ranges = grr.create_buffer_from_host(
-        grr::as_u8_slice(&gpu_data.curve_ranges),
-        grr::MemoryFlags::empty(),
-    )?;
-
     let mut running = true;
 
     let mut time_last = std::time::Instant::now();
@@ -116,8 +98,8 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
     let mut avg_frametime_gpu = FrameTime(0.0);
 
     let mut viewport = Viewport {
-        position: (0.0, 0.0),
-        scaling_y: h as _,
+        position: (200.0, 130.0),
+        scaling_y: (1.0 * h) as _,
         aspect_ratio: (w / h) as _,
     };
 
@@ -176,6 +158,23 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
             avg_frametime_cpu.0 * 1000.0,
             avg_frametime_gpu.0 * 1000.0,
         ));
+
+        let gpu_data = update();
+
+        let gpu_vertices = grr.create_buffer_from_host(
+            grr::as_u8_slice(&gpu_data.vertices),
+            grr::MemoryFlags::empty(),
+        )?;
+        let gpu_bbox = grr
+            .create_buffer_from_host(grr::as_u8_slice(&gpu_data.bbox), grr::MemoryFlags::empty())?;
+        let gpu_primitives = grr.create_buffer_from_host(
+            grr::as_u8_slice(&gpu_data.primitives),
+            grr::MemoryFlags::empty(),
+        )?;
+        let gpu_curve_ranges = grr.create_buffer_from_host(
+            grr::as_u8_slice(&gpu_data.curve_ranges),
+            grr::MemoryFlags::empty(),
+        )?;
 
         grr.bind_vertex_array(vertex_array);
         grr.bind_vertex_buffers(
@@ -263,6 +262,8 @@ pub unsafe fn run(name: &'static str, gpu_data: GpuData) -> Result<(), Box<dyn E
         avg_frametime_gpu.update((t1 - t0) as f32 / 1_000_000_000.0f32);
 
         window.swap_buffers()?;
+
+        grr.delete_buffers(&[gpu_vertices, gpu_bbox, gpu_primitives, gpu_curve_ranges]);
     }
 
     Ok(())

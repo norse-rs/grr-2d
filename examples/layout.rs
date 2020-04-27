@@ -1,4 +1,4 @@
-use grr_2d::{Offset, Extent};
+use grr_2d::{Extent, Offset};
 use nalgebra_glm as glm;
 use random_color::{Luminosity, RandomColor};
 use std::error::Error;
@@ -6,48 +6,59 @@ use std::error::Error;
 type WidgetId = usize;
 
 const INVALID: WidgetId = !0;
+
+#[derive(Copy, Clone, Debug)]
 enum Phase {
+    Update,
     Layout { size: Extent },
+    Render,
+    DebugLayout,
 }
 
-struct Ui {
-    widgets: Vec<WidgetData>,
-    phase: Option<Phase>,
+pub enum Event {
+    MouseMove { x: f64, y: f64 },
+}
+// Single Pass
+struct UpdateWidgets {
+    num_widgets: usize,
 }
 
-impl Ui {
-    pub fn new() -> Self {
-        Ui {
+impl UpdateWidgets {
+    fn new() -> Self {
+        UpdateWidgets { num_widgets: 0 }
+    }
+
+    fn reset(&mut self) {
+        self.num_widgets = 0;
+    }
+}
+
+// Multi Pass
+struct LayoutWidgets {
+    widgets: Vec<LayoutData>,
+}
+
+struct LayoutData {
+    layout: Layout,
+    rect: Rect,
+    first_child: WidgetId,
+    last_child: WidgetId,
+    next: WidgetId,
+}
+
+impl LayoutWidgets {
+    fn new() -> Self {
+        LayoutWidgets {
             widgets: Vec::new(),
-            phase: None,
         }
     }
 
-    pub fn begin_phase(&mut self, phase: Phase) -> WidgetId {
-        assert!(self.phase.is_none());
-
-        self.phase = Some(phase);
+    fn reset(&mut self) {
         self.widgets.clear();
-        self.add_layout(Layout { axis: Axis::Horizontal, flex: 1.0, extent: glm::vec2(0.0, 0.0), padding: 0.0 })
     }
 
-    pub fn end_phase(&mut self) {
-        match self.phase {
-            Some(Phase::Layout { size }) => {
-                self.layout_node(
-                    0,
-                    Constraint {
-                        min: glm::vec2(0.0, 0.0),
-                        max: size,
-                    },
-                );
-            }
-            None => panic!("no phase started"),
-        }
-    }
-
-    fn add_layout(&mut self, layout: Layout) -> WidgetId {
-        let data = WidgetData {
+    fn add(&mut self, layout: Layout) -> WidgetId {
+        let data = LayoutData {
             layout,
             rect: Rect::new(),
             first_child: INVALID,
@@ -60,38 +71,19 @@ impl Ui {
         id
     }
 
-    pub fn add(&mut self, parent: WidgetId, widget: impl Widget) -> WidgetId {
-        match self.phase {
-            Some(Phase::Layout { .. }) => {
-                let child = self.add_layout(widget.layout());
-                let prev_child = self.widgets[parent].last_child;
-                self.widgets[parent].last_child = child;
-
-                match prev_child {
-                    INVALID => {
-                        self.widgets[parent].first_child = child;
-                    }
-                    _ => {
-                        self.widgets[prev_child].next = child;
-                    }
-                }
-
-                child
-            }
-            _ => self.add_layout(Layout { axis: Axis::Horizontal, flex: 0.0, extent: glm::vec2(0.0, 0.0), padding: 0.0 }) // dummy
-        }
-    }
-
     fn layout_node(&mut self, node: WidgetId, constraint: Constraint) {
         if self.widgets[node].first_child == INVALID {
-            let padding = glm::vec2(2.0 * self.widgets[node].layout.padding, 2.0 * self.widgets[node].layout.padding);
+            let padding = glm::vec2(
+                2.0 * self.widgets[node].layout.padding,
+                2.0 * self.widgets[node].layout.padding,
+            );
             let extent = if self.widgets[node].layout.flex == 0.0 {
                 self.widgets[node].layout.extent + padding
             } else {
-                glm::max2(&(self.widgets[node]
-                    .layout
-                    .extent + padding)
-                    , &constraint.max)
+                glm::max2(
+                    &(self.widgets[node].layout.extent + padding),
+                    &constraint.max,
+                )
             };
             self.widgets[node].rect.extent = extent;
             return;
@@ -148,7 +140,9 @@ impl Ui {
         }
 
         assert!(min_main < std::f32::INFINITY);
-        let total_flex_available = dbg!((axis.main(constraint.max) - min_main - 2.0 * self.widgets[node].layout.padding).max(0.0));
+        let total_flex_available =
+            (axis.main(constraint.max) - min_main - 2.0 * self.widgets[node].layout.padding)
+                .max(0.0);
         let mut flex_available = total_flex_available;
 
         let mut main = min_main;
@@ -161,7 +155,6 @@ impl Ui {
                     let child_main = (total_flex_available * self.widgets[child].layout.flex
                         / flex_weight_sum)
                         .min(flex_available);
-
 
                     match axis {
                         Axis::Horizontal => {
@@ -209,10 +202,9 @@ impl Ui {
                 );
             }
         }
-
     }
 
-    pub fn render_layout(&self, id: WidgetId, mut offset: Offset, gpu_data: &mut grr_2d::GpuData) {
+    fn debug_render(&self, id: WidgetId, mut offset: Offset, gpu_data: &mut grr_2d::GpuData) {
         let widget = &self.widgets[id];
         let padding = glm::vec2(widget.layout.padding, widget.layout.padding);
         let rect_path = [grr_2d::Curve::Rect {
@@ -234,13 +226,13 @@ impl Ui {
             &grr_2d::Brush::Color([c, c, c, 255]),
         );
 
-        dbg!((id, offset, widget.rect.extent));
+        // dbg!((id, offset, widget.rect.extent));
 
         let axis = self.widgets[id].layout.axis;
         let mut child = self.widgets[id].first_child;
         while child != INVALID {
-            dbg!((id, child));
-            self.render_layout(child, offset, gpu_data);
+            // dbg!((id, child));
+            self.debug_render(child, offset, gpu_data);
             match axis {
                 Axis::Horizontal => offset.x += self.widgets[child].rect.extent.x,
                 Axis::Vertical => offset.y += self.widgets[child].rect.extent.y,
@@ -250,22 +242,152 @@ impl Ui {
     }
 }
 
-trait Widget {
-    fn layout(&self) -> Layout;
+// Single Pass
+struct RenderWidgets {
+    num_widgets: usize,
 }
 
-struct WidgetData {
-    layout: Layout,
-    rect: Rect,
-    first_child: WidgetId,
-    last_child: WidgetId,
-    next: WidgetId,
+impl RenderWidgets {
+    fn new() -> Self {
+        RenderWidgets { num_widgets: 0 }
+    }
+
+    fn reset(&mut self) {
+        self.num_widgets = 0;
+    }
+}
+
+struct Ui {
+    phase: Option<Phase>,
+    update: UpdateWidgets,
+    layout: LayoutWidgets,
+    render: RenderWidgets,
+}
+
+impl Ui {
+    pub fn new() -> Self {
+        Ui {
+            phase: None,
+            update: UpdateWidgets::new(),
+            layout: LayoutWidgets::new(),
+            render: RenderWidgets::new(),
+        }
+    }
+
+    pub fn begin_phase(&mut self, phase: Phase) -> WidgetRef {
+        assert!(self.phase.is_none());
+
+        self.phase = Some(phase);
+
+        let id = match phase {
+            Phase::Update => {
+                self.update.reset();
+                let root = self.update.num_widgets;
+                self.update.num_widgets += 1;
+                root
+            }
+            Phase::Layout { .. } => {
+                self.layout.reset();
+                self.layout.add(Layout {
+                    axis: Axis::Horizontal,
+                    flex: 1.0,
+                    extent: glm::vec2(0.0, 0.0),
+                    padding: 0.0,
+                })
+            }
+            Phase::Render => {
+                self.render.reset();
+                let root = self.update.num_widgets;
+                self.update.num_widgets += 1;
+                root
+            }
+        };
+
+        WidgetRef { ui: self, id }
+    }
+
+    pub fn end_phase(&mut self) {
+        match self.phase {
+            Some(Phase::Layout { size }) => {
+                self.layout.layout_node(
+                    0,
+                    Constraint {
+                        min: glm::vec2(0.0, 0.0),
+                        max: size,
+                    },
+                );
+            }
+            Some(Phase::Update) | Some(Phase::Render) => (),
+            None => panic!("no phase started"),
+        }
+
+        self.phase = None;
+    }
+
+    fn add(&mut self, parent: WidgetId, widget: impl Widget) -> WidgetId {
+        match self.phase {
+            Some(Phase::Layout { .. }) => {
+                let child = self.layout.add(widget.layout());
+                let prev_child = self.layout.widgets[parent].last_child;
+                self.layout.widgets[parent].last_child = child;
+
+                match prev_child {
+                    INVALID => {
+                        self.layout.widgets[parent].first_child = child;
+                    }
+                    _ => {
+                        self.layout.widgets[prev_child].next = child;
+                    }
+                }
+
+                child
+            }
+            _ => self.layout.add(Layout {
+                axis: Axis::Horizontal,
+                flex: 0.0,
+                extent: glm::vec2(0.0, 0.0),
+                padding: 0.0,
+            }), // dummy
+        }
+    }
+
+    pub fn render_layout(&self, mut offset: Offset, gpu_data: &mut grr_2d::GpuData) {
+        self.layout.debug_render(0, offset, gpu_data)
+    }
+}
+
+struct WidgetRef<'a> {
+    ui: &'a mut Ui,
+    id: WidgetId,
+}
+
+impl WidgetRef<'_> {
+    pub fn add(&mut self, widget: impl Widget) -> WidgetRef {
+        let id = self.ui.add(self.id, widget);
+        WidgetRef {
+            ui: &mut self.ui,
+            id,
+        }
+    }
+}
+
+pub enum EventPolicy {
+    Pass,
+    Acquire,
+    Consume,
+}
+
+trait Widget {
+    fn event(&self, event: &Event) -> EventPolicy;
+    fn update(&self);
+    fn layout(&self) -> Layout;
+    fn render(&self);
 }
 
 #[derive(Debug, Copy, Clone)]
 pub enum Axis {
     Horizontal, // x
-    Vertical, // y
+    Vertical,   // y
 }
 
 impl Axis {
@@ -302,7 +424,9 @@ struct Rect {
 
 impl Rect {
     pub fn new() -> Self {
-        Rect { extent: glm::vec2(0.0, 0.0) }
+        Rect {
+            extent: glm::vec2(0.0, 0.0),
+        }
     }
 }
 
@@ -313,6 +437,12 @@ pub enum Flex {
 }
 
 impl Widget for Flex {
+    fn event(&self, _: &Event) -> EventPolicy {
+        EventPolicy::Pass
+    }
+
+    fn update(&self) {}
+
     fn layout(&self) -> Layout {
         match *self {
             Flex::Flex(axis, flex) => Layout {
@@ -332,27 +462,34 @@ impl Widget for Flex {
                 flex: 1.0,
                 extent: glm::vec2(0.0, 0.0),
                 padding: p,
-            }
+            },
         }
     }
+
+    fn render(&self) {}
 }
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut gpu_data = grr_2d::GpuData::new();
-
     let mut ui = Ui::new();
 
-    let root = ui.begin_phase(Phase::Layout { size: glm::vec2(400.0, 100.0) });
-    let n0 = ui.add(root, Flex::Flex(Axis::Horizontal, 1.0));
-    ui.add(n0, Flex::Static(glm::vec2(40.0, 20.0)));
-    let n01 = ui.add(n0, Flex::Flex(Axis::Vertical, 1.0));
-    ui.add(n01, Flex::Flex(Axis::Horizontal, 3.0));
-    ui.add(n01, Flex::Flex(Axis::Horizontal, 1.0));
-    let n02 = ui.add(n0, Flex::Flex(Axis::Horizontal, 1.0));
-    ui.add(n02, Flex::Padding(5.0));
-    ui.end_phase();
+    unsafe {
+        grr_2d::run("layout", || {
+            let mut gpu_data = grr_2d::GpuData::new();
 
-    ui.render_layout(root, glm::vec2(0.0, 0.0), &mut gpu_data);
+            let mut root = ui.begin_phase(Phase::Layout {
+                size: glm::vec2(400.0, 100.0),
+            });
+            let mut n0 = root.add(Flex::Flex(Axis::Horizontal, 1.0));
+            n0.add(Flex::Static(glm::vec2(40.0, 20.0)));
+            let mut n01 = n0.add(Flex::Flex(Axis::Vertical, 1.0));
+            n01.add(Flex::Flex(Axis::Horizontal, 3.0));
+            n01.add(Flex::Flex(Axis::Horizontal, 1.0));
+            let mut n02 = n0.add(Flex::Flex(Axis::Horizontal, 1.0));
+            n02.add(Flex::Padding(5.0));
+            ui.end_phase();
 
-    unsafe { grr_2d::run("layout", gpu_data) }
+            ui.render_layout(glm::vec2(0.0, 0.0), &mut gpu_data);
+
+            gpu_data
+        })
+    }
 }
-

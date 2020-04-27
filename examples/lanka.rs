@@ -76,30 +76,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         gpu_data.extend(
             &curves,
             rect,
-            &grr_2d::Brush::LinearGradient {
-                stop0: grr_2d::GradientStop {
-                    position: glm::vec2(0.0, 80.0),
-                    color: [255, 100, 0, 255],
-                },
-                stop1: grr_2d::GradientStop {
-                    position: glm::vec2(0.0, 150.0),
-                    color: [255, 0, 70, 255],
-                },
-            },
+            &grr_2d::Brush::Color([0, 0, 0, 255])
+            // &grr_2d::Brush::LinearGradient {
+            //     stop0: grr_2d::GradientStop {
+            //         position: glm::vec2(0.0, 80.0),
+            //         color: [255, 100, 0, 255],
+            //     },
+            //     stop1: grr_2d::GradientStop {
+            //         position: glm::vec2(0.0, 150.0),
+            //         color: [255, 0, 70, 255],
+            //     },
+            // },
         );
     }
 
     let box_path = grr_2d::PathBuilder::new();
     let box_path = box_path
-        .move_to(glm::vec2(-30.0, 40.0))
-        .quad_to(glm::vec2(-20.0, 60.0), glm::vec2(20.0, 70.0))
-        .line_to(glm::vec2(50.0, 50.0))
-        .line_to(glm::vec2(30.0, 0.0))
+        .move_to(glm::vec2(0.0, 0.0))
+        .quad_to(glm::vec2(100.0, 200.0), glm::vec2(140.0, 100.0))
+        // .move_to(glm::vec2(-30.0, 40.0))
+        // .quad_to(glm::vec2(-20.0, 60.0), glm::vec2(20.0, 70.0))
+        // .line_to(glm::vec2(50.0, 50.0))
+        // .line_to(glm::vec2(30.0, 0.0))
         .monotonize()
         .stroke(
-            4.0,
+            20.0,
             (
-                grr_2d::CurveCap::Round,
+                grr_2d::CurveCap::Butt,
                 grr_2d::CurveJoin::Round,
                 grr_2d::CurveCap::Butt,
             ),
@@ -134,5 +137,5 @@ fn main() -> Result<(), Box<dyn Error>> {
         &grr_2d::Brush::Color([100, 100, 200, 255]),
     );
 
-    unsafe { grr_2d::run_wgpu("lanka", gpu_data) }
+    unsafe { grr_2d::run("lanka", || { gpu_data.clone() } ) }
 }

@@ -1,5 +1,7 @@
 #version 450 core
 
+#define GRR 1
+
 const float FLOAT_MAX = 3.402823466e+38;
 
 const uint PRIMITIVE_LINE = 0x1; // distance field generation (linear curve)
@@ -12,17 +14,17 @@ const uint PRIMITIVE_SHADOW_RECT = 0x6;
 const uint PRIMITIVE_FILL_COLOR = 0x10;
 const uint PRIMITIVE_FILL_LINEAR_GRADIENT = 0x11;
 
-// #if 0
-// layout (location = 0) uniform uint u_num_primitives;
-// layout (location = 1) uniform vec4 u_viewport;
-// layout (location = 2) uniform vec2 u_screen_dim;
-// # else
+#if GRR
+layout (location = 0) uniform uint u_num_primitives;
+layout (location = 1) uniform vec4 u_viewport;
+layout (location = 2) uniform vec2 u_screen_dim;
+# else
 layout(binding = 2) uniform Locals {
     vec4 u_viewport;
     vec2 u_screen_dim;
     uint u_num_primitives;
 };
-// #endif
+#endif
 
 layout (location = 0) in vec2 f_pos_curve;
 layout (location = 1) flat in uvec3 f_curve_range;
@@ -74,9 +76,9 @@ float erf(float x) {
 //     return smoothstep(-0.8, 0.8, x * ddx);
 // }
 
-// box filtering - good for precise cases
-float cdf(float x, float ddx) {
-    return clamp(x * ddx + 0.5, 0.0, 1.0);
+// approx trapezoid area
+float cdf(float x, float m) {
+    return clamp(x*m + 0.5, 0.0, 1.0);
 }
 
 layout(location = 0) out vec4 o_frag;
@@ -100,7 +102,7 @@ void main() {
             const vec2 p1 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
 
             if (max(p0.y, p1.y) < -0.5 * dxdy.y) {
-                continue;
+                break;
             }
 
             const float xx0 = clamp(p0.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
@@ -111,9 +113,9 @@ void main() {
             if (xx != 0.0 && min(p0.y, p1.y) < 0.5 * dxdy.y) {
                 const float t = line_raycast(p0.x, p1.x, 0.5 * (xx0 + xx1)); // raycast y direction at sample pos
                 const float d = line_eval(p0.y, p1.y, t) * unit.y; // get x value at ray intersection
-                const vec2 tangent = p1 - p0;
-                const float ddy = abs(tangent.x) / length(tangent);
-                cy = cdf(d, ddy);
+                const vec2 tangent = abs(p1 - p0);
+                const float m = tangent.x / max(tangent.x, tangent.y);
+                cy = cdf(d, m);
             }
 
             coverage += cy * xx;
@@ -124,7 +126,7 @@ void main() {
             const vec2 p2 = unpackHalf2x16(vertices[base_vertex++]) - tile_center;
 
             if (max(p0.y, p2.y) < -0.5 * dxdy.y) {
-                continue;
+                break;
             }
 
             const float xx0 = clamp(p0.x, -0.5 * dxdy.x, 0.5 * dxdy.x);
@@ -135,9 +137,9 @@ void main() {
             if (xx != 0.0 && min(p0.y, p2.y) < 0.5 * dxdy.y) {
                 const float t = quad_raycast(p0.x, p1.x, p2.x, 0.5 * (xx0 + xx1)); // raycast y direction at sample pos
                 const float d = quad_eval(p0.y, p1.y, p2.y, t) * unit.y; // get x value at ray intersection
-                const vec2 tangent = mix(p1 - p0, p2 - p1, t);
-                const float ddy = abs(tangent.x) / length(tangent);
-                cy = cdf(d, ddy);
+                const vec2 tangent = abs(mix(p1 - p0, p2 - p1, t));
+                const float m = tangent.x / max(tangent.x, tangent.y);
+                cy = cdf(d, m);
             }
 
             coverage += cy * xx;
@@ -152,7 +154,7 @@ void main() {
             const float xx = (xx1 - xx0) * unit.x;
 
             if (xx == 0.0) {
-                continue;
+                break;
             }
 
             if ((center.y + radius > -0.5 * dxdy.y) && (center.y - radius < 0.5 * dxdy.y)) {
@@ -162,8 +164,8 @@ void main() {
                 const float dy0 = (center.y - dy) * unit.y;
                 const float dy1 = (center.y + dy) * unit.y;
 
-                coverage -= xx * cdf(dy0, ddy);
-                coverage += xx * cdf(dy1, ddy);
+                coverage -= xx * cdf(dy0, ddy); // TODO
+                coverage += xx * cdf(dy1, ddy); // TODO
             }
         } break;
 
@@ -179,7 +181,7 @@ void main() {
             const float xx = (xx1 - xx0) * unit.x;
 
             if (xx == 0.0) {
-                continue;
+                break;
             }
 
             float cy = 0.0;
@@ -191,7 +193,7 @@ void main() {
                     const float dx = 0.5 * (xx0 + xx1) - center.x;
                     const float dy = sqrt(dot(d0, d0) - dx * dx);
                     const float d = (center.y + sign * dy) * unit.y;
-                    const float ddy = abs(dy) / length(d0);
+                    const float ddy = abs(dy) / length(d0); // todo
                     cy = cdf(d, ddy);
                 } else {
                     cy = 1.0;

@@ -62,3 +62,11 @@ impl Rect {
         }
     }
 }
+
+pub struct FrameTime(pub f32);
+
+impl FrameTime {
+    pub fn update(&mut self, t: f32) {
+        self.0 = self.0 * 0.95 + 0.05 * t;
+    }
+}

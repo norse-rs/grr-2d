@@ -1,18 +1,10 @@
-use crate::{GpuData, Viewport};
-use winit::dpi::LogicalSize;
-use winit::event::{Event, WindowEvent, DeviceEvent, ElementState, MouseScrollDelta};
-use winit::event_loop::ControlFlow;
+use crate::{GpuData, Viewport, FrameTime};
 use std::error::Error;
 use wgpu::vertex_attr_array;
-use zerocopy::{AsBytes, FromBytes};
-
-struct FrameTime(f32);
-
-impl FrameTime {
-    pub fn update(&mut self, t: f32) {
-        self.0 = self.0 * 0.95 + 0.05 * t;
-    }
-}
+use winit::dpi::LogicalSize;
+use winit::event::{DeviceEvent, ElementState, Event, MouseScrollDelta, WindowEvent};
+use winit::event_loop::ControlFlow;
+use zerocopy::AsBytes;
 
 #[repr(C)]
 #[derive(Copy, Clone, AsBytes)]
@@ -31,8 +23,7 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
             width: 1240.0,
             height: 700.0,
         });
-    let window = wb
-        .build(&event_loop)?;
+    let window = wb.build(&event_loop)?;
 
     let size = window.inner_size();
 
@@ -43,7 +34,8 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
             power_preference: wgpu::PowerPreference::Default,
         },
         wgpu::BackendBit::PRIMARY,
-    ).unwrap();
+    )
+    .unwrap();
 
     let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
         extensions: wgpu::Extensions {
@@ -61,29 +53,44 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
     };
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-    let vs_module =
-        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&include_bytes!("../assets/lanka.vs.spv")[..])).unwrap());
-    let fs_module =
-        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&include_bytes!("../assets/lanka.fs.spv")[..])).unwrap());
+    let vs_module = device.create_shader_module(
+        &wgpu::read_spirv(std::io::Cursor::new(
+            &include_bytes!("../assets/lanka.vs.spv")[..],
+        ))
+        .unwrap(),
+    );
+    let fs_module = device.create_shader_module(
+        &wgpu::read_spirv(std::io::Cursor::new(
+            &include_bytes!("../assets/lanka.fs.spv")[..],
+        ))
+        .unwrap(),
+    );
 
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { bindings: &[
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        bindings: &[
             wgpu::BindGroupLayoutBinding {
                 binding: 0,
                 visibility: wgpu::ShaderStage::FRAGMENT,
-                ty: wgpu::BindingType::StorageBuffer { dynamic: false, readonly: true },
+                ty: wgpu::BindingType::StorageBuffer {
+                    dynamic: false,
+                    readonly: true,
+                },
             },
             wgpu::BindGroupLayoutBinding {
                 binding: 1,
                 visibility: wgpu::ShaderStage::FRAGMENT,
-                ty: wgpu::BindingType::StorageBuffer { dynamic: false, readonly: true },
+                ty: wgpu::BindingType::StorageBuffer {
+                    dynamic: false,
+                    readonly: true,
+                },
             },
             wgpu::BindGroupLayoutBinding {
                 binding: 2,
                 visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                 ty: wgpu::BindingType::UniformBuffer { dynamic: false },
             },
-        ] });
+        ],
+    });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         bind_group_layouts: &[&bind_group_layout],
@@ -133,7 +140,7 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
                 stride: (std::mem::size_of::<u32>() * 3) as wgpu::BufferAddress,
                 step_mode: wgpu::InputStepMode::Vertex,
                 attributes: &vertex_attr_array![2 => Uint3],
-            }
+            },
         ],
         sample_count: 1,
         sample_mask: !0,
@@ -145,20 +152,16 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
         wgpu::BufferUsage::STORAGE_READ,
     );
 
-    let gpu_bbox = device.create_buffer_with_data(
-        gpu_data.bbox.as_bytes(),
-        wgpu::BufferUsage::VERTEX,
-    );
+    let gpu_bbox =
+        device.create_buffer_with_data(gpu_data.bbox.as_bytes(), wgpu::BufferUsage::VERTEX);
 
     let gpu_primitives = device.create_buffer_with_data(
         gpu_data.primitives.as_bytes(),
         wgpu::BufferUsage::STORAGE_READ,
     );
 
-    let gpu_curve_ranges = device.create_buffer_with_data(
-        gpu_data.curve_ranges.as_bytes(),
-        wgpu::BufferUsage::VERTEX,
-    );
+    let gpu_curve_ranges =
+        device.create_buffer_with_data(gpu_data.curve_ranges.as_bytes(), wgpu::BufferUsage::VERTEX);
 
     let mut viewport = Viewport {
         position: (0.0, 0.0),
@@ -172,7 +175,10 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
         num_primitives: gpu_data.primitives.len() as _,
         _pad: 0,
     };
-    let locals = device.create_buffer_with_data(locals_dummy.as_bytes(), wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST);
+    let locals = device.create_buffer_with_data(
+        locals_dummy.as_bytes(),
+        wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+    );
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &bind_group_layout,
@@ -181,30 +187,29 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer {
                     buffer: &gpu_vertices,
-                    range: 0 .. gpu_data.vertices.as_bytes().len() as _,
+                    range: 0..gpu_data.vertices.as_bytes().len() as _,
                 },
             },
             wgpu::Binding {
                 binding: 1,
                 resource: wgpu::BindingResource::Buffer {
                     buffer: &gpu_primitives,
-                    range: 0 .. gpu_data.primitives.as_bytes().len() as _,
+                    range: 0..gpu_data.primitives.as_bytes().len() as _,
                 },
             },
             wgpu::Binding {
                 binding: 2,
                 resource: wgpu::BindingResource::Buffer {
                     buffer: &locals,
-                    range: 0 .. 32,
+                    range: 0..32,
                 },
-            }
+            },
         ],
     });
 
     let mut time_last = std::time::Instant::now();
     let mut avg_frametime_cpu = FrameTime(0.0);
     let mut avg_frametime_gpu = FrameTime(0.0);
-
 
     // let query = [
     //     grr.create_query(grr::QueryType::Timestamp),
@@ -273,14 +278,19 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
                     num_primitives: gpu_data.primitives.len() as _,
                     _pad: 0,
                 };
-                let temp_buf =
-                    device.create_buffer_with_data(locals_dummy.as_bytes(), wgpu::BufferUsage::COPY_SRC);
-
+                let temp_buf = device
+                    .create_buffer_with_data(locals_dummy.as_bytes(), wgpu::BufferUsage::COPY_SRC);
 
                 let mut encoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
                 {
-                    encoder.copy_buffer_to_buffer(&temp_buf, 0, &locals, 0, std::mem::size_of::<Locals>() as _);
+                    encoder.copy_buffer_to_buffer(
+                        &temp_buf,
+                        0,
+                        &locals,
+                        0,
+                        std::mem::size_of::<Locals>() as _,
+                    );
                     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                             attachment: &frame.view,
@@ -301,7 +311,7 @@ pub unsafe fn run_wgpu(name: &'static str, gpu_data: GpuData) -> Result<(), Box<
                     rpass.set_vertex_buffers(0, &[(&gpu_bbox, 0), (&gpu_curve_ranges, 0)]);
 
                     let num_vertices = gpu_data.bbox.len() as u32 / 4;
-                    rpass.draw(0 .. num_vertices, 0 .. 1);
+                    rpass.draw(0..num_vertices, 0..1);
                 }
 
                 queue.submit(&[encoder.finish()]);

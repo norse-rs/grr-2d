@@ -25,6 +25,7 @@ fn pack_unorm8x4(x: u8, y: u8, z: u8, w: u8) -> u32 {
     x as u32 | (y as u32) << 8 | (z as u32) << 16 | (w as u32) << 24
 }
 
+#[derive(Clone)]
 pub struct GpuData {
     pub vertices: Vec<u32>,
     pub primitives: Vec<u32>,
